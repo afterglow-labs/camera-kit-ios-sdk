@@ -30,7 +30,13 @@
 "camera_kit_connected_lenses_join_session_message" = "Join a session with a group ID.";
 "camera_kit_connected_lenses_join_session_title" = "Connected Lenses";
 "camera_kit_connected_lenses_join" = "Join";
+"camera_kit_connected_lenses_launch" = "Launch";
+"camera_kit_connected_lenses_launch_failed_message" = "Failed to launch connected lenses session, please try again later.";
+"camera_kit_connected_lenses_launch_failed_title" = "Error";
 "camera_kit_connected_lenses_ok" = "Ok";
+"camera_kit_connected_lenses_scan_qr_hint" = "Point camera at QR code";
+"camera_kit_connected_lenses_session_id_copied" = "Session ID copied to clipboard";
+"camera_kit_connected_lenses_session_qr_title" = "Session QR Code";
 "camera_kit_connected_lenses_start" = "Start";
 
 /// MARK: Flash
