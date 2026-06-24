@@ -7,16 +7,22 @@ import SwiftUI
 import UIKit
 
 @available(iOS 14.0, *)
-public enum CameraPreviewFraming {
-    case safeTop
-    case fullscreen
+public enum CameraPreviewAspectRatio {
+    case fullScreen
+    case nineBySixteen
+    case threeByFour
+    case square
 
-    var ignoredSafeAreaEdges: Edge.Set {
+    var widthToHeight: CGFloat? {
         switch self {
-        case .safeTop:
-            return [.leading, .trailing, .bottom]
-        case .fullscreen:
-            return .all
+        case .fullScreen:
+            return nil
+        case .nineBySixteen:
+            return 9.0 / 16.0
+        case .threeByFour:
+            return 3.0 / 4.0
+        case .square:
+            return 1.0
         }
     }
 }
@@ -31,15 +37,15 @@ public struct CameraView: View {
     private var cameraController: CameraController
 
     private let onChromeHiddenChange: ((Bool) -> Void)?
-    private let previewFraming: CameraPreviewFraming
+    private let previewAspectRatio: CameraPreviewAspectRatio
 
     public init(
         cameraController: CameraController,
-        previewFraming: CameraPreviewFraming = .safeTop,
+        previewAspectRatio: CameraPreviewAspectRatio = .fullScreen,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
         self.cameraController = cameraController
-        self.previewFraming = previewFraming
+        self.previewAspectRatio = previewAspectRatio
         self.onChromeHiddenChange = onChromeHiddenChange
         cameraController.configure(
             orientation: .portrait, textInputContextProvider: nil, agreementsPresentationContextProvider: nil,
@@ -51,23 +57,12 @@ public struct CameraView: View {
         let chromeOpacity = state.chromeHidden ? 0.0 : 1.0
 
         ZStack {
-            PreviewView(cameraKit: cameraController.cameraKit)
-                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
-                .onTapGesture(count: 2, perform: cameraController.flipCamera)
-                .gesture(
-                    MagnificationGesture(minimumScaleDelta: 0)
-                        .onChanged(cameraController.zoomExistingLevel(by:))
-                        .onEnded { _ in
-                            cameraController.finalizeZoom()
-                        })
-            RingLightRepresentable(state: state)
-                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
-                .allowsHitTesting(false)
-                .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
-            RingLightStroke(color: Color(state.ringLightColor))
-                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
-                .allowsHitTesting(false)
-                .opacity(state.showingRingLight && !state.chromeHidden ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+            PreviewLayer(
+                state: state,
+                cameraController: cameraController,
+                aspectRatio: previewAspectRatio
+            )
+            .edgesIgnoringSafeArea(.all)
             VStack {
                 LensHeader(lensName: cameraController.currentLens?.name ?? "")
                 MessageView(
@@ -82,8 +77,8 @@ public struct CameraView: View {
             .allowsHitTesting(!state.chromeHidden)
             SnapAttributionContainerRepresentable()
                 .edgesIgnoringSafeArea(.all)
-            .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
-            .allowsHitTesting(false)
+                .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
+                .allowsHitTesting(false)
             CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
                 .edgesIgnoringSafeArea(.all)
                 .opacity(chromeOpacity)
@@ -111,6 +106,56 @@ public struct CameraView: View {
                 VideoPreviewView(video: url, snapchatDelegate: cameraController.snapchatDelegate)
                     .edgesIgnoringSafeArea(.bottom)
             }
+        }
+    }
+}
+
+@available(iOS 14.0, *)
+private struct PreviewLayer: View {
+    @ObservedObject var state: CameraViewState
+    let cameraController: CameraController
+    let aspectRatio: CameraPreviewAspectRatio
+
+    var body: some View {
+        GeometryReader { proxy in
+            let previewSize = size(for: proxy.size, aspectRatio: aspectRatio.widthToHeight)
+
+            ZStack {
+                PreviewView(cameraKit: cameraController.cameraKit)
+                    .onTapGesture(count: 2, perform: cameraController.flipCamera)
+                    .gesture(
+                        MagnificationGesture(minimumScaleDelta: 0)
+                            .onChanged(cameraController.zoomExistingLevel(by:))
+                            .onEnded { _ in
+                                cameraController.finalizeZoom()
+                            })
+                RingLightRepresentable(state: state)
+                    .allowsHitTesting(false)
+                    .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
+                RingLightStroke(color: Color(state.ringLightColor))
+                    .allowsHitTesting(false)
+                    .opacity(state.showingRingLight && !state.chromeHidden ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+            }
+            .frame(width: previewSize.width, height: previewSize.height)
+            .clipped()
+            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            .background(Color.black)
+        }
+        .background(Color.black)
+    }
+
+    private func size(for availableSize: CGSize, aspectRatio: CGFloat?) -> CGSize {
+        guard let aspectRatio, aspectRatio > 0 else {
+            return availableSize
+        }
+
+        let availableRatio = availableSize.width / availableSize.height
+        if availableRatio > aspectRatio {
+            let height = availableSize.height
+            return CGSize(width: height * aspectRatio, height: height)
+        } else {
+            let width = availableSize.width
+            return CGSize(width: width, height: width / aspectRatio)
         }
     }
 }
@@ -248,7 +293,7 @@ private final class SnapAttributionContainerView: UIView {
         isUserInteractionEnabled = false
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -104),
+            snapAttributionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -156),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }
@@ -354,6 +399,17 @@ private final class InclusiveCameraControlsView: UIView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setup()
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard !isHidden, alpha > 0.01, isUserInteractionEnabled else { return nil }
+        for subview in subviews.reversed() {
+            let convertedPoint = subview.convert(point, from: self)
+            if let hitView = subview.hitTest(convertedPoint, with: event) {
+                return hitView
+            }
+        }
+        return nil
     }
 
     func configure(cameraController: CameraController, coordinator: CameraInclusiveControlsRepresentable.Coordinator) {
