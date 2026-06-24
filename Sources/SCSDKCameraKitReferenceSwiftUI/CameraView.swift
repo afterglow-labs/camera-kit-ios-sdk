@@ -7,6 +7,21 @@ import SwiftUI
 import UIKit
 
 @available(iOS 14.0, *)
+public enum CameraPreviewFraming {
+    case safeTop
+    case fullscreen
+
+    var ignoredSafeAreaEdges: Edge.Set {
+        switch self {
+        case .safeTop:
+            return [.leading, .trailing, .bottom]
+        case .fullscreen:
+            return .all
+        }
+    }
+}
+
+@available(iOS 14.0, *)
 /// A sample implementation of a minimal SwiftUI view for a CameraKit camera experience.
 public struct CameraView: View {
     /// Relevant state for the view
@@ -16,9 +31,15 @@ public struct CameraView: View {
     private var cameraController: CameraController
 
     private let onChromeHiddenChange: ((Bool) -> Void)?
+    private let previewFraming: CameraPreviewFraming
 
-    public init(cameraController: CameraController, onChromeHiddenChange: ((Bool) -> Void)? = nil) {
+    public init(
+        cameraController: CameraController,
+        previewFraming: CameraPreviewFraming = .safeTop,
+        onChromeHiddenChange: ((Bool) -> Void)? = nil
+    ) {
         self.cameraController = cameraController
+        self.previewFraming = previewFraming
         self.onChromeHiddenChange = onChromeHiddenChange
         cameraController.configure(
             orientation: .portrait, textInputContextProvider: nil, agreementsPresentationContextProvider: nil,
@@ -31,7 +52,7 @@ public struct CameraView: View {
 
         ZStack {
             PreviewView(cameraKit: cameraController.cameraKit)
-                .edgesIgnoringSafeArea(.all)
+                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
                 .onTapGesture(count: 2, perform: cameraController.flipCamera)
                 .gesture(
                     MagnificationGesture(minimumScaleDelta: 0)
@@ -40,9 +61,13 @@ public struct CameraView: View {
                             cameraController.finalizeZoom()
                         })
             RingLightRepresentable(state: state)
-                .edgesIgnoringSafeArea(.all)
+                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
                 .allowsHitTesting(false)
                 .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
+            RingLightStroke(color: Color(state.ringLightColor))
+                .edgesIgnoringSafeArea(previewFraming.ignoredSafeAreaEdges)
+                .allowsHitTesting(false)
+                .opacity(state.showingRingLight && !state.chromeHidden ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
             VStack {
                 LensHeader(lensName: cameraController.currentLens?.name ?? "")
                 MessageView(
@@ -87,6 +112,24 @@ public struct CameraView: View {
                     .edgesIgnoringSafeArea(.bottom)
             }
         }
+    }
+}
+
+@available(iOS 14.0, *)
+private struct RingLightStroke: View {
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .strokeBorder(color, lineWidth: ringWidth(for: proxy.size))
+                .shadow(color: color.opacity(0.55), radius: 18)
+                .padding(2)
+        }
+    }
+
+    private func ringWidth(for size: CGSize) -> CGFloat {
+        max(10, min(22, min(size.width, size.height) * 0.028))
     }
 }
 
@@ -255,10 +298,20 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 
         func flashControlView(_ view: FlashControlView, updatedRingLightValue value: Float) {
             state.ringLightIntensity = CGFloat(value)
+            state.showingRingLight = value > 0
         }
 
         func flashControlView(_ view: FlashControlView, updatedFlashMode flashMode: CameraController.FlashMode) {
             cameraController.flashState = .on(flashMode)
+            switch flashMode {
+            case .ring:
+                state.showingRingLight = true
+                if state.ringLightIntensity == 0 {
+                    state.ringLightIntensity = CGFloat(view.ringLightIntensityValue)
+                }
+            case .standard:
+                state.showingRingLight = false
+            }
         }
 
         func adjustmentControlView(_ control: AdjustmentControlView, sliderValueChanged value: Double) {

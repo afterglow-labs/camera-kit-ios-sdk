@@ -53,6 +53,9 @@ public func CameraKitLocalizedString(
         // This indicates that the requested string has not been localized, and we should fall back to the English value instead of showing the user the key.
         return fallbackString
     }
+    if resolvedString == key {
+        return Constants.englishFallbacks[key] ?? resolvedString
+    }
     return resolvedString
 }
 
@@ -105,4 +108,45 @@ private func bestBundle(forPreferredLanguage preferredLanguage: String) -> Bundl
 private enum Constants {
     static let lProjExtension = "lproj"
     static let stringsDirectory = "Strings"
+    static let englishFallbacks = [
+        "camera_kit_adjustment_active": "Active",
+        "camera_kit_adjustment_intensity_slider": "Adjustment Intensity Slider",
+        "camera_kit_adjustment_portrait": "Portrait",
+        "camera_kit_adjustment_tone": "Tone",
+        "camera_kit_camera_flip_button": "Camera Flip Button",
+        "camera_kit_flash_configuration_button": "Flash Configuration Button",
+        "camera_kit_flash_toggle_button": "Flash Toggle Button",
+        "camera_kit_portrait_adjustment_toggle_button": "Portrait Adjustment Toggle Button",
+        "camera_kit_portrait_adjustment_configuration_button": "Portrait Adjustment Configuration Button",
+        "camera_kit_tone_map_adjustment_toggle_button": "Tone Map Adjustment Toggle Button",
+        "camera_kit_tone_map_configuration_button": "Tone Map Adjustment Configuration Button",
+        "camera_kit_flash_control": "Flash Control",
+        "camera_kit_portrait_control": "Portrait Control",
+        "camera_kit_tone_map_control": "Tone Map Control",
+        "camera_kit_connected_lenses_cancel": "Cancel",
+        "camera_kit_connected_lenses_group_id": "Group ID",
+        "camera_kit_connected_lenses_join_failed_message": "Failed to join connected lenses session, please try again later.",
+        "camera_kit_connected_lenses_join_failed_title": "Error",
+        "camera_kit_connected_lenses_join_session_message": "Join a session with a group ID.",
+        "camera_kit_connected_lenses_join_session_title": "Connected Lenses",
+        "camera_kit_connected_lenses_join": "Join",
+        "camera_kit_connected_lenses_launch": "Launch",
+        "camera_kit_connected_lenses_launch_failed_message": "Failed to launch connected lenses session, please try again later.",
+        "camera_kit_connected_lenses_launch_failed_title": "Error",
+        "camera_kit_connected_lenses_ok": "Ok",
+        "camera_kit_connected_lenses_scan_qr_hint": "Point camera at QR code",
+        "camera_kit_connected_lenses_session_id_copied": "Session ID copied to clipboard",
+        "camera_kit_connected_lenses_session_qr_title": "Session QR Code",
+        "camera_kit_connected_lenses_start": "Start",
+        "camera_kit_flash": "Flash",
+        "camera_kit_flash_mode_selector": "Flash Mode Selector",
+        "camera_kit_ring": "Ring",
+        "camera_kit_ring_light_color_selector": "Ring Light Color Selector",
+        "camera_kit_ring_light_intensity_slider": "Ring Light Intensity Slider",
+        "camera_kit_standard": "Standard",
+        "camera_kit_tap_to_dismiss": "Tap anywhere to dismiss",
+        "camera_kit_no_media_found": "No Media Found",
+        "camera_kit_powered_by": "Powered by",
+        "camera_kit_powered_by_snapchat": "Powered by Snapchat",
+    ]
 }
