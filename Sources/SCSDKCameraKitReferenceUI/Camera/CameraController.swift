@@ -193,14 +193,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ) {
         configureNotifications()
         promptForAccessIfNeeded { [self] in
-            configureCaptureSession()
-            configurePhotoCapture()
-            configureLenses(
-                orientation: orientation,
-                textInputContextProvider: textInputContextProvider,
-                agreementsPresentationContextProvider: agreementsPresentationContextProvider
-            )
-            completion?()
+            captureSessionQueue.async { [self] in
+                configureCaptureSession()
+                configurePhotoCapture()
+                configureLensesOnCaptureSessionQueue(
+                    orientation: orientation,
+                    textInputContextProvider: textInputContextProvider,
+                    agreementsPresentationContextProvider: agreementsPresentationContextProvider
+                )
+                DispatchQueue.main.async {
+                    completion?()
+                }
+            }
         }
     }
 
@@ -211,15 +215,20 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         textInputContextProvider: TextInputContextProvider?,
         agreementsPresentationContextProvider: AgreementsPresentationContextProvider?
     ) {
-        // Create a CameraKit input. AVSessionInput is an input that CameraKit provides that wraps up lens-specific
-        // details of AVCaptureSession configuration (such as setting the pixel format).
-        // You are still responsible for normal configuration of the session (adding the AVCaptureDevice, etc).
-        let input = AVSessionInput(session: captureSession)
+        captureSessionQueue.async { [self] in
+            configureLensesOnCaptureSessionQueue(
+                orientation: orientation,
+                textInputContextProvider: textInputContextProvider,
+                agreementsPresentationContextProvider: agreementsPresentationContextProvider
+            )
+        }
+    }
 
-        // Create a CameraKit ARKit input. AVSessionInput is an input that CameraKit provides that wraps up lens-specific
-        // details of ARSession configuration.
-        let arInput = ARSessionInput()
-
+    private func configureLensesOnCaptureSessionQueue(
+        orientation: AVCaptureVideoOrientation,
+        textInputContextProvider: TextInputContextProvider?,
+        agreementsPresentationContextProvider: AgreementsPresentationContextProvider?
+    ) {
         // If your lenses need TrueDepth-based face tracking (for ARKit face lenses or true size lenses),
         // use this initializer instead. Please note your app will be subject to additional app review,
         // concerning your usage of the TrueDepth camera.
@@ -230,6 +239,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
          let arInput = ARSessionInput(session: ARSession(), frontCameraConfiguration: config)
           */
 
+        let dataProvider = configureDataProvider()
+        // Create CameraKit inputs off the main thread. AVSessionInput may touch AVCaptureSession internals
+        // during initialization, and AVCaptureSession startRunning must not happen on the main thread.
+        let input = AVSessionInput(session: captureSession)
+        let arInput = ARSessionInput()
+
         // Start the actual CameraKit session. Once the session is started, CameraKit will begin processing frames and
         // sending output. The lens processor (cameraKit.lenses.processor) will be instantiated at this point, and
         // you can start sending commands to it (such as applying/clearing lenses).
@@ -238,7 +253,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             arInput: arInput,
             cameraPosition: .front,
             videoOrientation: orientation,
-            dataProvider: configureDataProvider(),
+            dataProvider: dataProvider,
             hintDelegate: self,
             textInputContextProvider: textInputContextProvider,
             agreementsPresentationContextProvider: agreementsPresentationContextProvider
@@ -247,9 +262,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         // Start the capture session. It's important you start the capture session after starting the CameraKit session
         // because the CameraKit input and session configures the capture session implicitly and you may run into a
         // race condition which causes some audio and video output frames to be lost, resulting in a blank preview view
-        captureSessionQueue.async {
-            input.startRunning()
-        }
+        input.startRunning()
     }
 
     /// Configures the data provider for lenses. Subclasses may override this to customize their data provider.
