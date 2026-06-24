@@ -143,6 +143,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         cameraKit.adjustments.processor?.isAdjustmentAvailable(PortraitAdjustment()) ?? false
     }
 
+    /// Current preferred exposure bias for the active capture device.
+    public private(set) var preferredExposureTargetBias: Float = 0
+
     /// The current state of the camera flash.
     public var flashState: FlashState = .off {
         didSet {
@@ -278,6 +281,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         // because the CameraKit input and session configures the capture session implicitly and you may run into a
         // race condition which causes some audio and video output frames to be lost, resulting in a blank preview view
         input.startRunning()
+        applyPreferredExposureTargetBias()
+        DispatchQueue.main.async { [weak self] in
+            self?.applyPreferredToneMapAdjustment()
+        }
     }
 
     /// Configures the data provider for lenses. Subclasses may override this to customize their data provider.
@@ -622,6 +629,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         self.toneMapController = nil
     }
 
+    /// Sets the tone map adjustment amount used for shadow/highlight balancing.
+    ///
+    /// A value of `0` disables the adjustment. Values above `0` enable Camera Kit's native tone mapping.
+    public func setToneMapAdjustmentAmount(_ amount: Double) {
+        let clampedAmount = min(max(amount, 0), 1)
+        preferredToneMapAdjustmentAmount = clampedAmount
+
+        DispatchQueue.main.async { [weak self] in
+            self?.applyPreferredToneMapAdjustment()
+        }
+    }
+
     /// Enables the portrait adjustment.
     /// - Returns: Float representing the intensity of the portrait blur effect.
     /// - Note: Before calling this function, check whether or not the adjustment is available for the device. See `isPortraitAdjustmentAvailable`.
@@ -639,6 +658,16 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
         cameraKit.adjustments.processor?.remove(portraitController)
         self.portraitController = nil
+    }
+
+    /// Sets the exposure target bias on the active capture device.
+    ///
+    /// This keeps lighting changes in the camera input before Camera Kit processes frames for lenses.
+    public func setExposureTargetBias(_ bias: Float) {
+        preferredExposureTargetBias = bias
+        captureSessionQueue.async { [weak self] in
+            self?.applyPreferredExposureTargetBias()
+        }
     }
 
     // MARK: LensHintDelegate
@@ -666,7 +695,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     public func adjustmentControlView(_ control: AdjustmentControlView, sliderValueChanged value: Double) {
         switch AdjustmentControlView.Variant(rawValue: control.tag) {
-        case .tone: toneMapController?.amount = value
+        case .tone: setToneMapAdjustmentAmount(value)
         case .portrait: portraitController?.blur = value
         default: break
         }
@@ -681,6 +710,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Controller for adjusting the applied portrait adjustment.
     private var portraitController: PortraitAdjustmentController?
+
+    /// Preferred tone map amount to restore after Camera Kit starts or recreates the pipeline.
+    private var preferredToneMapAdjustmentAmount: Double = 0
 
     /// Temporary state that holds the starting point for the last zoom level
     /// Since pinching is a relative operation, we need to keep whatever it was left at last to compare.
@@ -780,6 +812,40 @@ private extension CameraController {
                 return
             }
         }
+    }
+
+    private func applyPreferredExposureTargetBias() {
+        guard let device = cameraInputDevice else {
+            return
+        }
+
+        do {
+            try device.lockForConfiguration()
+            let clampedBias = min(max(preferredExposureTargetBias, device.minExposureTargetBias), device.maxExposureTargetBias)
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposureMode = .continuousAutoExposure
+            }
+            device.setExposureTargetBias(clampedBias, completionHandler: nil)
+            device.unlockForConfiguration()
+        } catch {
+            print("[CameraKit] Failed to lock device for configuration when trying to adjust exposure bias")
+        }
+    }
+
+    private func applyPreferredToneMapAdjustment() {
+        guard preferredToneMapAdjustmentAmount > 0 else {
+            disableToneMapAdjustment()
+            return
+        }
+
+        guard isToneMapAdjustmentAvailable else {
+            return
+        }
+
+        if toneMapController == nil {
+            _ = enableToneMapAdjustment()
+        }
+        toneMapController?.amount = preferredToneMapAdjustmentAmount
     }
 }
 
