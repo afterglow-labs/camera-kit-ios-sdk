@@ -49,6 +49,12 @@ public class CameraViewState: NSObject, ObservableObject {
 
     /// Whether a diagnostic message is being displayed
     @Published var showingMessage = false
+
+    /// Whether the ring light effect should be displayed.
+    @Published var showingRingLight = false
+
+    /// Whether Snap attribution should be displayed.
+    @Published var showingSnapAttribution = true
 }
 
 @available(iOS 14.0, *)
@@ -103,21 +109,23 @@ extension CameraViewState: CameraControllerUIDelegate {
         hint = nil
     }
 
-    // To be implemented once CameraActionsView is ported to SwiftUI, otherwise unnecessary.
-
     public func cameraControllerRequestedRingLightShow(_ controller: CameraController) {
+        showingRingLight = true
     }
 
     public func cameraControllerRequestedRingLightHide(_ controller: CameraController) {
+        showingRingLight = false
     }
 
     public func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {
     }
 
     public func cameraControllerRequestedSnapAttributionViewShow(_ controller: CameraController) {
+        showingSnapAttribution = true
     }
 
     public func cameraControllerRequestedSnapAttributionViewHide(_ controller: CameraController) {
+        showingSnapAttribution = false
     }
 
     public func cameraControllerRequestedCameraFlip(_ controller: CameraController) {

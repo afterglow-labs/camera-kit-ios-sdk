@@ -3,6 +3,7 @@
 import SCSDKCameraKit
 import SCSDKCameraKitReferenceUI
 import SwiftUI
+import UIKit
 
 @available(iOS 14.0, *)
 /// A sample implementation of a minimal SwiftUI view for a CameraKit camera experience.
@@ -32,6 +33,10 @@ public struct CameraView: View {
                         .onEnded { _ in
                             cameraController.finalizeZoom()
                         })
+            RingLightRepresentable()
+                .edgesIgnoringSafeArea(.all)
+                .allowsHitTesting(false)
+                .opacity(state.showingRingLight ? 1 : 0)
             VStack {
                 LensHeader(
                     lensName: cameraController.currentLens?.name ?? "", flipCameraAction: cameraController.flipCamera
@@ -44,6 +49,18 @@ public struct CameraView: View {
                 MediaPickerView(provider: cameraController.lensMediaProvider)
                 LensFooter(state: state, cameraController: cameraController)
             }
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    SnapAttributionRepresentable()
+                        .frame(width: 84, height: 28)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 112)
+                }
+            }
+            .opacity(state.showingSnapAttribution ? 1 : 0)
+            .allowsHitTesting(false)
             HintView(hint: state.hint)
             ProgressView()
                 .opacity(state.loading ? 1 : 0)
@@ -61,6 +78,69 @@ public struct CameraView: View {
             }
         }
     }
+}
+
+private struct RingLightRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> LayoutAwareRingLightContainerView {
+        let view = LayoutAwareRingLightContainerView()
+        view.apply(intensity: 0.2, color: .white, animated: false)
+        return view
+    }
+
+    func updateUIView(_ uiView: LayoutAwareRingLightContainerView, context: Context) {
+        uiView.apply(intensity: 0.2, color: .white, animated: true)
+    }
+}
+
+private final class LayoutAwareRingLightContainerView: UIView {
+    private let ringLightView = RingLightView()
+    private var currentIntensity: CGFloat = 0.2
+    private var currentColor: UIColor = .white
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    func apply(intensity: CGFloat, color: UIColor, animated: Bool) {
+        currentIntensity = intensity
+        currentColor = color
+        ringLightView.changeColor(to: color)
+        setNeedsLayout()
+        layoutIfNeeded()
+        ringLightView.ringLightGradient.updateIntensity(to: intensity, animated: animated && bounds != .zero)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        ringLightView.changeColor(to: currentColor)
+        ringLightView.ringLightGradient.updateIntensity(to: currentIntensity, animated: false)
+    }
+
+    private func setup() {
+        isUserInteractionEnabled = false
+        ringLightView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(ringLightView)
+        NSLayoutConstraint.activate([
+            ringLightView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            ringLightView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            ringLightView.topAnchor.constraint(equalTo: topAnchor),
+            ringLightView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+}
+
+private struct SnapAttributionRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> SnapAttributionView {
+        SnapAttributionView()
+    }
+
+    func updateUIView(_ uiView: SnapAttributionView, context: Context) {}
 }
 
 /// A sample implementation of a header view, which shows the lens name and a camera flip button
