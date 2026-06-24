@@ -19,8 +19,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "SCSDKCameraKit",
-            url: "https://storage.googleapis.com/snap-kit-build/scsdk/camera-kit-ios/releases-spm/1.50.0/SCSDKCameraKit.xcframework.zip",
-            checksum: "43de5121865273f2219dbb60eddbe95775ee8a3a7baeec56ad594b1047a0e610"
+            url: "https://github.com/afterglow-labs/camera-kit-ios-sdk/releases/download/1.50.7/SCSDKCameraKit.xcframework.zip",
+            checksum: "5710cb1f77ffe9cfe7fe7b873d8c3fb3552201bbba0477e55ec13d8e25d601ac"
         ),
         .binaryTarget(
             name: "SCSDKCameraKitLoginKitAuth",
