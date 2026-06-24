@@ -15,8 +15,11 @@ public struct CameraView: View {
     /// A controller which manages the camera and lenses stack on behalf of the view
     private var cameraController: CameraController
 
-    public init(cameraController: CameraController) {
+    private let onChromeHiddenChange: ((Bool) -> Void)?
+
+    public init(cameraController: CameraController, onChromeHiddenChange: ((Bool) -> Void)? = nil) {
         self.cameraController = cameraController
+        self.onChromeHiddenChange = onChromeHiddenChange
         cameraController.configure(
             orientation: .portrait, textInputContextProvider: nil, agreementsPresentationContextProvider: nil,
             completion: nil
@@ -41,9 +44,7 @@ public struct CameraView: View {
                 .allowsHitTesting(false)
                 .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
             VStack {
-                LensHeader(
-                    lensName: cameraController.currentLens?.name ?? "", flipCameraAction: cameraController.flipCamera
-                )
+                LensHeader(lensName: cameraController.currentLens?.name ?? "")
                 MessageView(
                     lensName: cameraController.currentLens?.name ?? "", lensID: cameraController.currentLens?.id ?? "",
                     showing: state.showingMessage
@@ -54,16 +55,8 @@ public struct CameraView: View {
             }
             .opacity(chromeOpacity)
             .allowsHitTesting(!state.chromeHidden)
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    SnapAttributionRepresentable()
-                        .frame(width: 84, height: 28)
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 112)
-                }
-            }
+            SnapAttributionContainerRepresentable()
+                .edgesIgnoringSafeArea(.all)
             .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
             .allowsHitTesting(false)
             CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
@@ -78,7 +71,11 @@ public struct CameraView: View {
         }.onAppear {
             state.cameraController = cameraController
             state.updateAdjustmentAvailability()
+            onChromeHiddenChange?(state.chromeHidden)
             cameraController.cameraKit.adjustments.processor?.addObserver(state)
+        }
+        .onChange(of: state.chromeHidden) { hidden in
+            onChromeHiddenChange?(hidden)
         }
         .sheet(item: $state.captured, onDismiss: cameraController.reapplyCurrentLens) { item in
             switch item {
@@ -178,12 +175,40 @@ private final class LayoutAwareRingLightContainerView: UIView {
     }
 }
 
-private struct SnapAttributionRepresentable: UIViewRepresentable {
-    func makeUIView(context: Context) -> SnapAttributionView {
-        SnapAttributionView()
+private struct SnapAttributionContainerRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> SnapAttributionContainerView {
+        SnapAttributionContainerView()
     }
 
-    func updateUIView(_ uiView: SnapAttributionView, context: Context) {}
+    func updateUIView(_ uiView: SnapAttributionContainerView, context: Context) {}
+}
+
+private final class SnapAttributionContainerView: UIView {
+    private let snapAttributionView: SnapAttributionView = {
+        let view = SnapAttributionView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        addSubview(snapAttributionView)
+        NSLayoutConstraint.activate([
+            snapAttributionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -104),
+            trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
+        ])
+    }
 }
 
 @available(iOS 14.0, *)
@@ -438,27 +463,17 @@ private final class InclusiveCameraControlsView: UIView {
     }
 }
 
-/// A sample implementation of a header view, which shows the lens name and a camera flip button
+/// A sample implementation of a header view, which shows the lens name.
 struct LensHeader: View {
     /// The name of the currently selected lens.
     let lensName: String
 
-    /// An action to call when the camera flip button is tapped.
-    let flipCameraAction: () -> Void
-
     var body: some View {
-        ZStack {
-            Text(lensName)
-                .frame(alignment: .center)
-                .font(.headline)
-                .foregroundColor(.white)
-            HStack {
-                Spacer()
-                Button(action: flipCameraAction) {
-                    Image("ck_camera_flip", bundle: BundleHelper.resourcesBundle)
-                }
-            }
-        }.padding()
+        Text(lensName)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .font(.headline)
+            .foregroundColor(.white)
+            .padding()
     }
 }
 

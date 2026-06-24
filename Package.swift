@@ -50,7 +50,15 @@ let package = Package(
             path: "Sources/CameraKitPushToDeviceExtension_Wrapper"
         ),
                 
-        .target(name: "SCSDKCameraKitReferenceUI", dependencies: ["SCSDKCameraKit"], path: "Sources/SCSDKCameraKitReferenceUI"),
+        .target(
+            name: "SCSDKCameraKitReferenceUI",
+            dependencies: ["SCSDKCameraKit"],
+            path: "Sources/SCSDKCameraKitReferenceUI",
+            resources: [
+                .process("Resources/Reference.xcassets"),
+                .copy("Resources/Strings")
+            ]
+        ),
         .target(name: "SCSDKCameraKitReferenceSwiftUI", dependencies: ["SCSDKCameraKitReferenceUI"], path: "Sources/SCSDKCameraKitReferenceSwiftUI")
     ]
 )

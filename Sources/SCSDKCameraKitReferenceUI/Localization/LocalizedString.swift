@@ -62,14 +62,24 @@ private func bestBundle(forPreferredLanguages preferredLanguages: [String]) -> B
 
 private func bestBundle(forPreferredLanguage preferredLanguage: String) -> Bundle? {
     let bundle: Bundle
+    #if SWIFT_PACKAGE
+        bundle = BundleHelper.resourcesBundle
+    #else
     // CocoaPods places it here
     if let url = Bundle.main.url(forResource: "CameraKitReferenceUI", withExtension: "bundle"), let referenceBundle = Bundle(url: url) {
         bundle = referenceBundle
     } else {
         bundle = Bundle(for: Stub.self)
     }
+    #endif
     let lProjURL: URL?
     if let fullMatch = bundle.url(forResource: preferredLanguage, withExtension: Constants.lProjExtension) {
+        lProjURL = fullMatch
+    } else if let fullMatch = bundle.url(
+        forResource: preferredLanguage,
+        withExtension: Constants.lProjExtension,
+        subdirectory: Constants.stringsDirectory
+    ) {
         lProjURL = fullMatch
     } else {
         // preferred language contains region code (ie. `es-US`) which may not have its own localization
@@ -77,6 +87,11 @@ private func bestBundle(forPreferredLanguage preferredLanguage: String) -> Bundl
         let components = NSLocale.components(fromLocaleIdentifier: preferredLanguage)
         if let languageCode = components[NSLocale.Key.languageCode.rawValue] {
             lProjURL = bundle.url(forResource: languageCode, withExtension: Constants.lProjExtension)
+                ?? bundle.url(
+                    forResource: languageCode,
+                    withExtension: Constants.lProjExtension,
+                    subdirectory: Constants.stringsDirectory
+                )
         } else {
             lProjURL = nil
         }
@@ -89,4 +104,5 @@ private func bestBundle(forPreferredLanguage preferredLanguage: String) -> Bundl
 
 private enum Constants {
     static let lProjExtension = "lproj"
+    static let stringsDirectory = "Strings"
 }
