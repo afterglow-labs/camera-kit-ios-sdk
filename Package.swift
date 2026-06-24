@@ -14,7 +14,7 @@ let package = Package(
         .library(name: "SCSDKCameraKitReferenceSwiftUI", targets: ["SCSDKCameraKitReferenceSwiftUI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/Snapchat/snap-kit-spm", .upToNextMajor(from: "2.5.0"))
+        .package(url: "https://github.com/afterglow-labs/snap-kit-spm", .upToNextMajor(from: "2.6.1"))
     ],
     targets: [
         .binaryTarget(
