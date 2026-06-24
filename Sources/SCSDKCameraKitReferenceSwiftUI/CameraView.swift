@@ -629,17 +629,20 @@ struct LensFooter: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(state.recording ? "Stop recording" : "Start recording")
             }
+            .frame(height: 42)
+
+            Button(
+                action: {
+                    state.selectedLens = nil
+                },
+                label: {
+                    Image("ck_close_circle", bundle: BundleHelper.resourcesBundle)
+                }
+            )
+            .frame(width: 32, height: 32)
+            .opacity(state.selectedLens == nil ? 0 : 1)
         }
-        Button(
-            action: {
-                state.selectedLens = nil
-            },
-            label: {
-                Image("ck_close_circle", bundle: BundleHelper.resourcesBundle)
-            }
-        )
-        .padding(.top)
-        .opacity(state.selectedLens == nil ? 0 : 1)
+        .padding(.bottom, 22)
     }
 
     private func takePhoto() {

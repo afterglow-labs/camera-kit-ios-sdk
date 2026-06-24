@@ -49,6 +49,8 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     /// list of items before hiding carousel to record.
     private var storedItems = [CarouselItem]()
 
+    private var lastLaidOutBoundsSize: CGSize = .zero
+
     /// Image loader instance used to load each item icon.
     private let imageLoader = DefaultCarouselImageLoader()
 
@@ -148,6 +150,9 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     override public func layoutSubviews() {
         super.layoutSubviews()
 
+        guard bounds.size != lastLaidOutBoundsSize else { return }
+        lastLaidOutBoundsSize = bounds.size
+
         // collection view padding is half of frame - half of item size (frame height)
         let padding = (frame.size.width / 2.0) - (frame.size.height / 2.0)
         collectionView.contentInset.left = padding
@@ -164,8 +169,8 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         ringLayer.path = path.cgPath
 
         collectionViewLayout.itemSize = CGSize(width: frame.size.height, height: frame.size.height)
-        reloadData()
-        selectItem(selectedItem)
+        collectionViewLayout.invalidateLayout()
+        selectItem(selectedItem, animated: false)
     }
 
     // MARK: Items
@@ -175,10 +180,15 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     /// - Parameter selected: carousel item to select
     @discardableResult
     public func selectItem(_ selected: CarouselItem) -> Bool {
+        selectItem(selected, animated: true)
+    }
+
+    @discardableResult
+    private func selectItem(_ selected: CarouselItem, animated: Bool) -> Bool {
         if let index = items.firstIndex(where: { $0.id == selected.id }) {
             selectedItem = selected
             collectionView.scrollToItem(
-                at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: true
+                at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: animated
             )
             return true
         } else {
