@@ -10,10 +10,12 @@ import SwiftUI
 public class CameraViewState: NSObject, ObservableObject {
     private var cancelleables: Set<AnyCancellable> = []
     private var hideMessage: DispatchWorkItem?
+    private weak var configuredCameraController: CameraController?
 
     weak var cameraController: CameraController! {
         didSet {
-            guard let controller = cameraController else { return }
+            guard let controller = cameraController, oldValue !== controller else { return }
+            cancelleables.removeAll()
             controller.uiDelegate = self
             $selectedLens
                 .sink { [weak self] lens in
@@ -73,6 +75,28 @@ public class CameraViewState: NSObject, ObservableObject {
 
     /// Whether video recording is currently active.
     @Published var recording = false
+
+    func configureIfNeeded(
+        cameraController controller: CameraController,
+        onChromeHiddenChange: ((Bool) -> Void)?
+    ) {
+        guard configuredCameraController !== controller else {
+            onChromeHiddenChange?(chromeHidden)
+            return
+        }
+
+        configuredCameraController = controller
+        cameraController = controller
+        controller.configure(
+            orientation: .portrait,
+            textInputContextProvider: nil,
+            agreementsPresentationContextProvider: nil,
+            completion: nil
+        )
+        updateAdjustmentAvailability()
+        onChromeHiddenChange?(chromeHidden)
+        controller.cameraKit.adjustments.processor?.addObserver(self)
+    }
 }
 
 @available(iOS 14.0, *)

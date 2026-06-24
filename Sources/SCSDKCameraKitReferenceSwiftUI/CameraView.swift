@@ -47,10 +47,6 @@ public struct CameraView: View {
         self.cameraController = cameraController
         self.previewAspectRatio = previewAspectRatio
         self.onChromeHiddenChange = onChromeHiddenChange
-        cameraController.configure(
-            orientation: .portrait, textInputContextProvider: nil, agreementsPresentationContextProvider: nil,
-            completion: nil
-        )
     }
 
     public var body: some View {
@@ -89,10 +85,10 @@ public struct CameraView: View {
                 .opacity(state.loading && !state.chromeHidden ? 1 : 0)
             ChromeVisibilityButton(hidden: $state.chromeHidden)
         }.onAppear {
-            state.cameraController = cameraController
-            state.updateAdjustmentAvailability()
-            onChromeHiddenChange?(state.chromeHidden)
-            cameraController.cameraKit.adjustments.processor?.addObserver(state)
+            state.configureIfNeeded(
+                cameraController: cameraController,
+                onChromeHiddenChange: onChromeHiddenChange
+            )
         }
         .onChange(of: state.chromeHidden) { hidden in
             onChromeHiddenChange?(hidden)
@@ -118,8 +114,6 @@ private struct PreviewLayer: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let previewSize = size(for: proxy.size, aspectRatio: aspectRatio.widthToHeight)
-
             ZStack {
                 PreviewView(cameraKit: cameraController.cameraKit)
                     .onTapGesture(count: 2, perform: cameraController.flipCamera)
@@ -135,18 +129,41 @@ private struct PreviewLayer: View {
                 RingLightStroke(color: Color(state.ringLightColor))
                     .allowsHitTesting(false)
                     .opacity(state.showingRingLight && !state.chromeHidden ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+                AspectRatioMatte(availableSize: proxy.size, aspectRatio: aspectRatio.widthToHeight)
+                    .allowsHitTesting(false)
             }
-            .frame(width: previewSize.width, height: previewSize.height)
-            .clipped()
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            .background(Color.black)
         }
         .background(Color.black)
     }
+}
 
-    private func size(for availableSize: CGSize, aspectRatio: CGFloat?) -> CGSize {
-        guard let aspectRatio, aspectRatio > 0 else {
-            return availableSize
+@available(iOS 14.0, *)
+private struct AspectRatioMatte: View {
+    let availableSize: CGSize
+    let aspectRatio: CGFloat?
+
+    var body: some View {
+        ZStack {
+            if let frame = matteFrame {
+                Color.black
+                    .frame(width: availableSize.width, height: topBarHeight(for: frame))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                Color.black
+                    .frame(width: availableSize.width, height: topBarHeight(for: frame))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                Color.black
+                    .frame(width: sideBarWidth(for: frame), height: availableSize.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                Color.black
+                    .frame(width: sideBarWidth(for: frame), height: availableSize.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    private var matteFrame: CGSize? {
+        guard let aspectRatio, aspectRatio > 0, availableSize.width > 0, availableSize.height > 0 else {
+            return nil
         }
 
         let availableRatio = availableSize.width / availableSize.height
@@ -157,6 +174,14 @@ private struct PreviewLayer: View {
             let width = availableSize.width
             return CGSize(width: width, height: width / aspectRatio)
         }
+    }
+
+    private func topBarHeight(for frame: CGSize) -> CGFloat {
+        max(0, (availableSize.height - frame.height) / 2)
+    }
+
+    private func sideBarWidth(for frame: CGSize) -> CGFloat {
+        max(0, (availableSize.width - frame.width) / 2)
     }
 }
 
