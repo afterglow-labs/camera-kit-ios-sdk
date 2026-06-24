@@ -2,6 +2,7 @@
 
 import SCSDKCameraKit
 import SCSDKCameraKitReferenceUI
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -23,6 +24,8 @@ public struct CameraView: View {
     }
 
     public var body: some View {
+        let chromeOpacity = state.chromeHidden ? 0.0 : 1.0
+
         ZStack {
             PreviewView(cameraKit: cameraController.cameraKit)
                 .edgesIgnoringSafeArea(.all)
@@ -33,10 +36,10 @@ public struct CameraView: View {
                         .onEnded { _ in
                             cameraController.finalizeZoom()
                         })
-            RingLightRepresentable()
+            RingLightRepresentable(state: state)
                 .edgesIgnoringSafeArea(.all)
                 .allowsHitTesting(false)
-                .opacity(state.showingRingLight ? 1 : 0)
+                .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
             VStack {
                 LensHeader(
                     lensName: cameraController.currentLens?.name ?? "", flipCameraAction: cameraController.flipCamera
@@ -49,6 +52,8 @@ public struct CameraView: View {
                 MediaPickerView(provider: cameraController.lensMediaProvider)
                 LensFooter(state: state, cameraController: cameraController)
             }
+            .opacity(chromeOpacity)
+            .allowsHitTesting(!state.chromeHidden)
             VStack {
                 Spacer()
                 HStack {
@@ -59,13 +64,21 @@ public struct CameraView: View {
                         .padding(.bottom, 112)
                 }
             }
-            .opacity(state.showingSnapAttribution ? 1 : 0)
+            .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
             .allowsHitTesting(false)
+            CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
+                .edgesIgnoringSafeArea(.all)
+                .opacity(chromeOpacity)
+                .allowsHitTesting(!state.chromeHidden)
             HintView(hint: state.hint)
+                .opacity(chromeOpacity)
             ProgressView()
-                .opacity(state.loading ? 1 : 0)
+                .opacity(state.loading && !state.chromeHidden ? 1 : 0)
+            ChromeVisibilityButton(hidden: $state.chromeHidden)
         }.onAppear {
             state.cameraController = cameraController
+            state.updateAdjustmentAvailability()
+            cameraController.cameraKit.adjustments.processor?.addObserver(state)
         }
         .sheet(item: $state.captured, onDismiss: cameraController.reapplyCurrentLens) { item in
             switch item {
@@ -80,15 +93,45 @@ public struct CameraView: View {
     }
 }
 
+@available(iOS 14.0, *)
+private struct ChromeVisibilityButton: View {
+    @Binding var hidden: Bool
+
+    var body: some View {
+        VStack {
+            HStack {
+                Button(action: { hidden.toggle() }) {
+                    Image(systemName: hidden ? "eye.slash.fill" : "eye.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.black.opacity(hidden ? 0.16 : 0.36))
+                        .clipShape(Circle())
+                        .opacity(hidden ? 0.38 : 0.9)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(hidden ? "Show camera controls" : "Hide camera controls")
+                .padding(.top, 54)
+                .padding(.leading, 14)
+                Spacer()
+            }
+            Spacer()
+        }
+    }
+}
+
+@available(iOS 14.0, *)
 private struct RingLightRepresentable: UIViewRepresentable {
+    @ObservedObject var state: CameraViewState
+
     func makeUIView(context: Context) -> LayoutAwareRingLightContainerView {
         let view = LayoutAwareRingLightContainerView()
-        view.apply(intensity: 0.2, color: .white, animated: false)
+        view.apply(intensity: state.ringLightIntensity, color: state.ringLightColor, animated: false)
         return view
     }
 
     func updateUIView(_ uiView: LayoutAwareRingLightContainerView, context: Context) {
-        uiView.apply(intensity: 0.2, color: .white, animated: true)
+        uiView.apply(intensity: state.ringLightIntensity, color: state.ringLightColor, animated: true)
     }
 }
 
@@ -143,6 +186,258 @@ private struct SnapAttributionRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: SnapAttributionView, context: Context) {}
 }
 
+@available(iOS 14.0, *)
+private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
+    @ObservedObject var state: CameraViewState
+    let cameraController: CameraController
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(state: state, cameraController: cameraController)
+    }
+
+    func makeUIView(context: Context) -> InclusiveCameraControlsView {
+        let view = InclusiveCameraControlsView()
+        context.coordinator.controlsView = view
+        view.configure(cameraController: cameraController, coordinator: context.coordinator)
+        view.updateAdjustmentAvailability(tone: state.toneMapAvailable, portrait: state.portraitAvailable)
+        return view
+    }
+
+    func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
+        uiView.updateAdjustmentAvailability(tone: state.toneMapAvailable, portrait: state.portraitAvailable)
+        uiView.updateFlashToggle(for: cameraController.cameraPosition)
+    }
+
+    final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
+        let state: CameraViewState
+        let cameraController: CameraController
+        weak var controlsView: InclusiveCameraControlsView?
+
+        init(state: CameraViewState, cameraController: CameraController) {
+            self.state = state
+            self.cameraController = cameraController
+        }
+
+        @objc
+        func flipCamera() {
+            cameraController.flipCamera()
+            controlsView?.updateFlashToggle(for: cameraController.cameraPosition)
+        }
+
+        func flashControlView(_ view: FlashControlView, selectedRingLightColor color: UIColor) {
+            state.ringLightColor = color
+        }
+
+        func flashControlView(_ view: FlashControlView, updatedRingLightValue value: Float) {
+            state.ringLightIntensity = CGFloat(value)
+        }
+
+        func flashControlView(_ view: FlashControlView, updatedFlashMode flashMode: CameraController.FlashMode) {
+            cameraController.flashState = .on(flashMode)
+        }
+
+        func adjustmentControlView(_ control: AdjustmentControlView, sliderValueChanged value: Double) {
+            cameraController.adjustmentControlView(control, sliderValueChanged: value)
+        }
+    }
+}
+
+@available(iOS 14.0, *)
+private final class InclusiveCameraControlsView: UIView {
+    let cameraActionsView = CameraActionsView()
+    let flashControlView = FlashControlView()
+    let flashControlDismissalHint = UILabel.controlDismissalHint()
+    let toneMapControlView: AdjustmentControlView = {
+        let view = AdjustmentControlView()
+        let variant = AdjustmentControlView.Variant.tone
+        view.tag = variant.rawValue
+        view.primaryLabel.text = variant.label
+        view.accessibilityIdentifier = CameraElements.toneMapControl.id
+        view.accessibilityLabel = CameraKitLocalizedString(key: "camera_kit_tone_map_control", comment: "")
+        return view
+    }()
+    let toneMapControlDismissalHint = UILabel.controlDismissalHint()
+    let portraitControlView: AdjustmentControlView = {
+        let view = AdjustmentControlView()
+        let variant = AdjustmentControlView.Variant.portrait
+        view.tag = variant.rawValue
+        view.primaryLabel.text = variant.label
+        view.accessibilityIdentifier = CameraElements.portraitControl.id
+        view.accessibilityLabel = CameraKitLocalizedString(key: "camera_kit_portrait_control", comment: "")
+        return view
+    }()
+    let portraitControlDismissalHint = UILabel.controlDismissalHint()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    func configure(cameraController: CameraController, coordinator: CameraInclusiveControlsRepresentable.Coordinator) {
+        cameraActionsView.flipCameraButton.addTarget(coordinator, action: #selector(coordinator.flipCamera), for: .touchUpInside)
+
+        flashControlView.delegate = coordinator
+        toneMapControlView.delegate = coordinator
+        portraitControlView.delegate = coordinator
+
+        cameraActionsView.flashActionView.enableAction = { [weak cameraController] in
+            cameraController?.enableFlash()
+        }
+        cameraActionsView.flashActionView.disableAction = { [weak cameraController] in
+            cameraController?.disableFlash()
+        }
+
+        cameraActionsView.toneMapActionView.enableAction = { [weak self, weak cameraController] in
+            guard let amount = cameraController?.enableToneMapAdjustment() else { return }
+            self?.toneMapControlView.intensityValue = amount
+        }
+        cameraActionsView.toneMapActionView.disableAction = { [weak cameraController] in
+            cameraController?.disableToneMapAdjustment()
+        }
+
+        cameraActionsView.portraitActionView.enableAction = { [weak self, weak cameraController] in
+            guard let blur = cameraController?.enablePortraitAdjustment() else { return }
+            self?.portraitControlView.intensityValue = blur
+        }
+        cameraActionsView.portraitActionView.disableAction = { [weak cameraController] in
+            cameraController?.disablePortraitAdjustment()
+        }
+
+        configureControlVisibilityCallbacks()
+        updateFlashToggle(for: cameraController.cameraPosition)
+    }
+
+    func updateAdjustmentAvailability(tone: Bool, portrait: Bool) {
+        cameraActionsView.toneMapActionView.isHidden = !tone
+        cameraActionsView.portraitActionView.isHidden = !portrait
+        if !tone {
+            toneMapControlView.isHidden = true
+            toneMapControlDismissalHint.isHidden = true
+        }
+        if !portrait {
+            portraitControlView.isHidden = true
+            portraitControlDismissalHint.isHidden = true
+        }
+    }
+
+    func updateFlashToggle(for position: AVCaptureDevice.Position) {
+        switch position {
+        case .front:
+            cameraActionsView.setupFlashToggleButtonForFront()
+            cameraActionsView.flipCameraButton.accessibilityValue = CameraElements.CameraFlip.front
+        case .back:
+            cameraActionsView.setupFlashToggleButtonForBack()
+            cameraActionsView.flipCameraButton.accessibilityValue = CameraElements.CameraFlip.back
+        default:
+            break
+        }
+    }
+
+    private func setup() {
+        backgroundColor = .clear
+        [cameraActionsView, flashControlView, flashControlDismissalHint, toneMapControlView,
+         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            addSubview($0)
+        }
+
+        flashControlView.accessibilityIdentifier = CameraElements.flashControl.id
+        flashControlView.accessibilityLabel = CameraKitLocalizedString(key: "camera_kit_flash_control", comment: "")
+        flashControlDismissalHint.accessibilityIdentifier = CameraElements.flashControlDismissalHint.id
+        toneMapControlDismissalHint.accessibilityIdentifier = CameraElements.toneMapControlDismissalHint.id
+        portraitControlDismissalHint.accessibilityIdentifier = CameraElements.portraitControlDismissalHint.id
+
+        hideAllControls()
+
+        NSLayoutConstraint.activate([
+            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6),
+            cameraActionsView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
+
+            flashControlView.trailingAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor, constant: -8),
+            flashControlView.topAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
+            flashControlDismissalHint.leadingAnchor.constraint(equalTo: flashControlView.leadingAnchor),
+            flashControlDismissalHint.trailingAnchor.constraint(equalTo: flashControlView.trailingAnchor),
+            flashControlDismissalHint.topAnchor.constraint(equalTo: flashControlView.bottomAnchor),
+
+            toneMapControlView.trailingAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.leadingAnchor, constant: -8),
+            toneMapControlView.topAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.bottomAnchor),
+            toneMapControlDismissalHint.leadingAnchor.constraint(equalTo: toneMapControlView.leadingAnchor),
+            toneMapControlDismissalHint.trailingAnchor.constraint(equalTo: toneMapControlView.trailingAnchor),
+            toneMapControlDismissalHint.topAnchor.constraint(equalTo: toneMapControlView.bottomAnchor),
+
+            portraitControlView.trailingAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.leadingAnchor, constant: -8),
+            portraitControlView.topAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.bottomAnchor),
+            portraitControlDismissalHint.leadingAnchor.constraint(equalTo: portraitControlView.leadingAnchor),
+            portraitControlDismissalHint.trailingAnchor.constraint(equalTo: portraitControlView.trailingAnchor),
+            portraitControlDismissalHint.topAnchor.constraint(equalTo: portraitControlView.bottomAnchor),
+        ])
+    }
+
+    private func configureControlVisibilityCallbacks() {
+        cameraActionsView.flashActionView.showActionSettings = { [weak self] in
+            self?.show(control: self?.flashControlView, hint: self?.flashControlDismissalHint)
+        }
+        cameraActionsView.flashActionView.hideActionSettings = { [weak self] in
+            self?.hide(control: self?.flashControlView, hint: self?.flashControlDismissalHint)
+        }
+        cameraActionsView.flashActionView.toggleActionSettingsVisibility = { [weak self] in
+            self?.toggle(control: self?.flashControlView, hint: self?.flashControlDismissalHint)
+        }
+
+        cameraActionsView.toneMapActionView.showActionSettings = { [weak self] in
+            self?.show(control: self?.toneMapControlView, hint: self?.toneMapControlDismissalHint)
+        }
+        cameraActionsView.toneMapActionView.hideActionSettings = { [weak self] in
+            self?.hide(control: self?.toneMapControlView, hint: self?.toneMapControlDismissalHint)
+        }
+        cameraActionsView.toneMapActionView.toggleActionSettingsVisibility = { [weak self] in
+            self?.toggle(control: self?.toneMapControlView, hint: self?.toneMapControlDismissalHint)
+        }
+
+        cameraActionsView.portraitActionView.showActionSettings = { [weak self] in
+            self?.show(control: self?.portraitControlView, hint: self?.portraitControlDismissalHint)
+        }
+        cameraActionsView.portraitActionView.hideActionSettings = { [weak self] in
+            self?.hide(control: self?.portraitControlView, hint: self?.portraitControlDismissalHint)
+        }
+        cameraActionsView.portraitActionView.toggleActionSettingsVisibility = { [weak self] in
+            self?.toggle(control: self?.portraitControlView, hint: self?.portraitControlDismissalHint)
+        }
+    }
+
+    private func show(control: UIView?, hint: UIView?) {
+        hideAllControls()
+        control?.isHidden = false
+        hint?.isHidden = false
+    }
+
+    private func hide(control: UIView?, hint: UIView?) {
+        control?.isHidden = true
+        hint?.isHidden = true
+    }
+
+    private func toggle(control: UIView?, hint: UIView?) {
+        guard let control, let hint else { return }
+        let shouldShow = control.isHidden
+        hideAllControls()
+        control.isHidden = !shouldShow
+        hint.isHidden = !shouldShow
+    }
+
+    private func hideAllControls() {
+        [flashControlView, flashControlDismissalHint, toneMapControlView,
+         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
+            $0.isHidden = true
+        }
+    }
+}
+
 /// A sample implementation of a header view, which shows the lens name and a camera flip button
 struct LensHeader: View {
     /// The name of the currently selected lens.
@@ -177,25 +472,39 @@ struct LensFooter: View {
     let cameraController: CameraController
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 8) {
             CarouselView(availableLenses: $state.lenses, selectedLens: $state.selectedLens)
-            CameraButton(
-                recordingStart: cameraController.startRecording, recordingCancel: cameraController.cancelRecording,
-                recordingFinish: {
-                    cameraController.finishRecording { url, _ in
-                        guard let url else { return }
-                        state.captured = .video(url: url)
-                        cameraController.clearLens(willReapply: true)
-                    }
-                },
-                photoCapture: {
-                    cameraController.takePhoto { image, _ in
-                        guard let image else { return }
-                        state.captured = .photo(image: image)
-                        cameraController.clearLens(willReapply: true)
-                    }
+                .frame(height: 62)
+            HStack(spacing: 18) {
+                Button(action: takePhoto) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Color.black.opacity(0.42))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 2))
                 }
-            )
+                .buttonStyle(.plain)
+                .accessibilityLabel("Take photo")
+
+                Button(action: toggleRecording) {
+                    Circle()
+                        .fill(state.recording ? Color.red.opacity(0.72) : Color.red)
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.white.opacity(state.recording ? 0.95 : 0))
+                                .frame(width: 12, height: 12)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(state.recording ? "Stop recording" : "Start recording")
+            }
         }
         Button(
             action: {
@@ -207,6 +516,28 @@ struct LensFooter: View {
         )
         .padding(.top)
         .opacity(state.selectedLens == nil ? 0 : 1)
+    }
+
+    private func takePhoto() {
+        cameraController.takePhoto { image, _ in
+            guard let image else { return }
+            state.captured = .photo(image: image)
+            cameraController.clearLens(willReapply: true)
+        }
+    }
+
+    private func toggleRecording() {
+        if state.recording {
+            cameraController.finishRecording { url, _ in
+                state.recording = false
+                guard let url else { return }
+                state.captured = .video(url: url)
+                cameraController.clearLens(willReapply: true)
+            }
+        } else {
+            state.recording = true
+            cameraController.startRecording()
+        }
     }
 }
 

@@ -208,6 +208,21 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
+    /// Stops CameraKit and the underlying capture session.
+    ///
+    /// Call this before replacing one reference camera implementation with another so that only one
+    /// CameraKit/capture pipeline owns the camera at a time.
+    public func stop(completion: (() -> Void)? = nil) {
+        captureSessionQueue.async { [self] in
+            cameraKit.activeInput.stopRunning()
+            cameraKit.stop {
+                DispatchQueue.main.async {
+                    completion?()
+                }
+            }
+        }
+    }
+
     /// Configures the lenses pipeline.
     /// - Parameter orientation: the camera orientation.
     open func configureLenses(

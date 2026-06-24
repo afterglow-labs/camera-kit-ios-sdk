@@ -55,6 +55,24 @@ public class CameraViewState: NSObject, ObservableObject {
 
     /// Whether Snap attribution should be displayed.
     @Published var showingSnapAttribution = true
+
+    /// Whether tone mapping is available for the current camera pipeline.
+    @Published var toneMapAvailable = false
+
+    /// Whether portrait adjustment is available for the current camera pipeline.
+    @Published var portraitAvailable = false
+
+    /// Current ring light intensity selected through the SDK flash control.
+    @Published var ringLightIntensity: CGFloat = 0.2
+
+    /// Current ring light color selected through the SDK flash control.
+    @Published var ringLightColor: UIColor = .white
+
+    /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
+    @Published var chromeHidden = false
+
+    /// Whether video recording is currently active.
+    @Published var recording = false
 }
 
 @available(iOS 14.0, *)
@@ -129,6 +147,19 @@ extension CameraViewState: CameraControllerUIDelegate {
     }
 
     public func cameraControllerRequestedCameraFlip(_ controller: CameraController) {
+    }
+}
+
+@available(iOS 14.0, *)
+extension CameraViewState: AdjustmentsProcessorObserver {
+    public func processorUpdatedAdjustmentsAvailability(_ adjustmentsProcessor: AdjustmentsProcessor) {
+        updateAdjustmentAvailability()
+    }
+
+    func updateAdjustmentAvailability() {
+        guard let controller = cameraController else { return }
+        toneMapAvailable = controller.isToneMapAdjustmentAvailable
+        portraitAvailable = controller.isPortraitAdjustmentAvailable
     }
 }
 
