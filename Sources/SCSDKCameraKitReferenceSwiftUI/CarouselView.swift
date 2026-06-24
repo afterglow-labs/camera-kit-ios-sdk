@@ -24,20 +24,21 @@ public struct CarouselView: UIViewRepresentable {
     }
 
     public func updateUIView(_ uiView: SCSDKCameraKitReferenceUI.CarouselView, context: Context) {
+        context.coordinator.parent = self
         let item = context.coordinator.item(for: selectedLens)
-        if uiView.selectedItem != item {
-            uiView.selectItem(item)
-        }
         if context.coordinator.availableLenses.map(\.id) != availableLenses.map(\.id) {
             context.coordinator.availableLenses = availableLenses
             uiView.reloadData()
+        }
+        if uiView.selectedItem != item {
+            uiView.selectItem(item)
         }
     }
 }
 
 public extension CarouselView {
     class Coordinator: NSObject, CarouselViewDelegate, CarouselViewDataSource {
-        let parent: CarouselView
+        var parent: CarouselView
         var availableLenses: [Lens] = []
 
         init(_ parent: CarouselView) {
@@ -49,8 +50,9 @@ public extension CarouselView {
         public func carouselView(
             _ view: SCSDKCameraKitReferenceUI.CarouselView, didSelect item: CarouselItem, at index: Int
         ) {
-            if index > 0 {
-                parent.selectedLens = parent.availableLenses[index - 1]
+            let lensIndex = index - 1
+            if lensIndex >= 0, lensIndex < availableLenses.count {
+                parent.selectedLens = availableLenses[lensIndex]
             } else {
                 parent.selectedLens = nil
             }
