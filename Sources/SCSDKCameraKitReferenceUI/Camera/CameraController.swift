@@ -606,7 +606,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// If a lens has already been applied, reapply it.
     public func reapplyCurrentLens() {
         guard let currentLens else { return }
-        cameraKit.lenses.processor?.apply(lens: currentLens, launchData: nil, completion: nil)
+        applyLens(currentLens)
+    }
+
+    /// Sets app-provided launch data that custom lenses can read when they are applied.
+    ///
+    /// This is the host-app pathway for custom Lens Studio scene controls, such as a Lens script
+    /// that maps `afterglow_lighting` or `afterglow_shadows` to an orthographic camera or light.
+    public func setLensLaunchDataOverrides(_ overrides: [String: String], reapplyCurrentLens: Bool = false) {
+        lensLaunchDataOverrides = overrides
+        if reapplyCurrentLens {
+            self.reapplyCurrentLens()
+        }
     }
 
     // MARK: Adjustments Application
@@ -713,6 +724,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Preferred tone map amount to restore after Camera Kit starts or recreates the pipeline.
     private var preferredToneMapAdjustmentAmount: Double = 0
+
+    /// App-provided launch data merged into the selected lens's vendor data.
+    private var lensLaunchDataOverrides: [String: String] = [:]
 
     /// Temporary state that holds the starting point for the last zoom level
     /// Since pinching is a relative operation, we need to keep whatever it was left at last to compare.
@@ -852,16 +866,19 @@ private extension CameraController {
 // MARK: Lens Application
 
 extension CameraController {
-    /// Generates the launch data for the lens. By default, this is just the vendor data attached to the lens.
+    /// Generates the launch data for the lens.
     /// - Parameter lens: the lens to generate launch data for
     /// - Returns: launch data.
     private func launchData(for lens: Lens) -> LensLaunchData {
-        guard !lens.vendorData.isEmpty else {
+        guard !lens.vendorData.isEmpty || !lensLaunchDataOverrides.isEmpty else {
             return EmptyLensLaunchData()
         }
 
         let launchDataBuilder = LensLaunchDataBuilder()
         for (key, val) in lens.vendorData {
+            launchDataBuilder.add(string: val, key: key)
+        }
+        for (key, val) in lensLaunchDataOverrides {
             launchDataBuilder.add(string: val, key: key)
         }
         return launchDataBuilder.launchData ?? EmptyLensLaunchData()
