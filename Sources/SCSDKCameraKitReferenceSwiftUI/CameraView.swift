@@ -36,16 +36,22 @@ public struct CameraView: View {
     /// A controller which manages the camera and lenses stack on behalf of the view
     private var cameraController: CameraController
 
+    @Binding private var chromeHidden: Bool
     private let onChromeHiddenChange: ((Bool) -> Void)?
     private let previewAspectRatio: CameraPreviewAspectRatio
+    private let showsChromeVisibilityButton: Bool
 
     public init(
         cameraController: CameraController,
         previewAspectRatio: CameraPreviewAspectRatio = .fullScreen,
+        chromeHidden: Binding<Bool> = .constant(false),
+        showsChromeVisibilityButton: Bool = true,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
         self.cameraController = cameraController
         self.previewAspectRatio = previewAspectRatio
+        self._chromeHidden = chromeHidden
+        self.showsChromeVisibilityButton = showsChromeVisibilityButton
         self.onChromeHiddenChange = onChromeHiddenChange
     }
 
@@ -83,14 +89,24 @@ public struct CameraView: View {
                 .opacity(chromeOpacity)
             ProgressView()
                 .opacity(state.loading && !state.chromeHidden ? 1 : 0)
-            ChromeVisibilityButton(hidden: $state.chromeHidden)
+            if showsChromeVisibilityButton {
+                ChromeVisibilityButton(hidden: $state.chromeHidden)
+            }
         }.onAppear {
+            state.chromeHidden = chromeHidden
             state.configureIfNeeded(
                 cameraController: cameraController,
                 onChromeHiddenChange: onChromeHiddenChange
             )
         }
+        .onChange(of: chromeHidden) { hidden in
+            guard state.chromeHidden != hidden else { return }
+            state.chromeHidden = hidden
+        }
         .onChange(of: state.chromeHidden) { hidden in
+            if chromeHidden != hidden {
+                chromeHidden = hidden
+            }
             onChromeHiddenChange?(hidden)
         }
         .sheet(item: $state.captured, onDismiss: cameraController.reapplyCurrentLens) { item in
@@ -209,6 +225,7 @@ private struct ChromeVisibilityButton: View {
 
     var body: some View {
         VStack {
+            Spacer()
             HStack {
                 Button(action: { hidden.toggle() }) {
                     Image(systemName: hidden ? "eye.slash.fill" : "eye.fill")
@@ -221,11 +238,10 @@ private struct ChromeVisibilityButton: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(hidden ? "Show camera controls" : "Hide camera controls")
-                .padding(.top, 54)
                 .padding(.leading, 14)
+                .padding(.bottom, 16)
                 Spacer()
             }
-            Spacer()
         }
     }
 }
