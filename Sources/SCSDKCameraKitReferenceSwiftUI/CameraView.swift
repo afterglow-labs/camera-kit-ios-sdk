@@ -215,9 +215,9 @@ private struct ChromeVisibilityButton: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(width: 38, height: 38)
-                        .background(Color.black.opacity(hidden ? 0.16 : 0.36))
+                        .background(Color.black.opacity(hidden ? 0.46 : 0.36))
                         .clipShape(Circle())
-                        .opacity(hidden ? 0.38 : 0.9)
+                        .opacity(hidden ? 0.86 : 0.9)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(hidden ? "Show camera controls" : "Hide camera controls")
