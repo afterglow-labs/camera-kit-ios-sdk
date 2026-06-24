@@ -146,6 +146,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Current preferred exposure bias for the active capture device.
     public private(set) var preferredExposureTargetBias: Float = 0
 
+    /// Current preferred warmth adjustment for the active capture device.
+    public private(set) var preferredWhiteBalanceWarmth: Float = 0
+
+    /// Current preferred tint adjustment for the active capture device.
+    public private(set) var preferredWhiteBalanceTint: Float = 0
+
     /// The current state of the camera flash.
     public var flashState: FlashState = .off {
         didSet {
@@ -282,6 +288,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         // race condition which causes some audio and video output frames to be lost, resulting in a blank preview view
         input.startRunning()
         applyPreferredExposureTargetBias()
+        applyPreferredWhiteBalanceAdjustment()
         DispatchQueue.main.async { [weak self] in
             self?.applyPreferredToneMapAdjustment()
         }
@@ -681,6 +688,17 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
+    /// Sets warmth and tint on the active capture device.
+    ///
+    /// Values should be in the range `-1...1`. Passing `0, 0` restores continuous auto white balance.
+    public func setWhiteBalanceAdjustment(warmth: Float, tint: Float) {
+        preferredWhiteBalanceWarmth = min(max(warmth, -1), 1)
+        preferredWhiteBalanceTint = min(max(tint, -1), 1)
+        captureSessionQueue.async { [weak self] in
+            self?.applyPreferredWhiteBalanceAdjustment()
+        }
+    }
+
     // MARK: LensHintDelegate
 
     public func lensProcessor(
@@ -844,6 +862,47 @@ private extension CameraController {
         } catch {
             print("[CameraKit] Failed to lock device for configuration when trying to adjust exposure bias")
         }
+    }
+
+    private func applyPreferredWhiteBalanceAdjustment() {
+        guard let device = cameraInputDevice else {
+            return
+        }
+
+        do {
+            try device.lockForConfiguration()
+            if abs(preferredWhiteBalanceWarmth) < 0.001, abs(preferredWhiteBalanceTint) < 0.001 {
+                if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                    device.whiteBalanceMode = .continuousAutoWhiteBalance
+                }
+                device.unlockForConfiguration()
+                return
+            }
+
+            let temperature = 5_000 + preferredWhiteBalanceWarmth * 3_000
+            let tint = preferredWhiteBalanceTint * 75
+            let values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(
+                temperature: temperature,
+                tint: tint
+            )
+            let gains = device.deviceWhiteBalanceGains(for: values)
+            device.setWhiteBalanceModeLocked(with: clampedWhiteBalanceGains(gains, for: device), completionHandler: nil)
+            device.unlockForConfiguration()
+        } catch {
+            print("[CameraKit] Failed to lock device for configuration when trying to adjust white balance")
+        }
+    }
+
+    private func clampedWhiteBalanceGains(
+        _ gains: AVCaptureDevice.WhiteBalanceGains,
+        for device: AVCaptureDevice
+    ) -> AVCaptureDevice.WhiteBalanceGains {
+        let maxGain = device.maxWhiteBalanceGain
+        return AVCaptureDevice.WhiteBalanceGains(
+            redGain: min(max(gains.redGain, 1), maxGain),
+            greenGain: min(max(gains.greenGain, 1), maxGain),
+            blueGain: min(max(gains.blueGain, 1), maxGain)
+        )
     }
 
     private func applyPreferredToneMapAdjustment() {
