@@ -88,6 +88,7 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     /// Since the carousel is on top of the camera button, this is needed in order to make the carousel appear behind the camera button as before.
     private lazy var facadeSelectionRingView: UIView = {
         let view = UIView()
+        view.layer.addSublayer(ringGlowLayer)
         view.layer.addSublayer(ringLayer)
         view.isUserInteractionEnabled = false
         view.accessibilityIdentifier = CarouselElements.facadeSelectionRingView.id
@@ -96,11 +97,24 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         return view
     }()
 
+    private let ringGlowLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = UIColor.white.withAlphaComponent(0.14).cgColor
+        layer.fillRule = .evenOdd
+        layer.shadowColor = UIColor.white.cgColor
+        layer.shadowOffset = .zero
+        layer.shadowOpacity = 0.42
+        layer.shadowRadius = 4.0
+
+        return layer
+    }()
+
     private let ringLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.fillColor = UIColor.clear.cgColor
-        layer.strokeColor = UIColor.white.cgColor
-        layer.lineWidth = 6.0
+        layer.strokeColor = UIColor.white.withAlphaComponent(0.88).cgColor
+        layer.lineCap = .round
+        layer.lineWidth = 2.0
 
         return layer
     }()
@@ -160,12 +174,33 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
 
         let cameraRingX = frame.midX
         let cameraRingY = frame.size.height / 2.0
-        let radius = CameraButton.Constants.ringSize / 2
+        let radius = max(1, min(CameraButton.Constants.ringSize, frame.size.height) / 2 - 5)
+        let ringCenter = CGPoint(x: cameraRingX, y: cameraRingY)
         let path = UIBezierPath(
-            arcCenter: CGPoint(x: cameraRingX, y: cameraRingY), radius: radius, startAngle: CGFloat.pi / -2.0,
+            arcCenter: ringCenter, radius: radius, startAngle: CGFloat.pi / -2.0,
             endAngle: 3 * CGFloat.pi / 2.0, clockwise: true
         )
+        let glowPath = UIBezierPath(
+            ovalIn: CGRect(
+                x: ringCenter.x - radius - 8,
+                y: ringCenter.y - radius - 8,
+                width: (radius + 8) * 2,
+                height: (radius + 8) * 2
+            )
+        )
+        glowPath.append(
+            UIBezierPath(
+                ovalIn: CGRect(
+                    x: ringCenter.x - radius - 3,
+                    y: ringCenter.y - radius - 3,
+                    width: (radius + 3) * 2,
+                    height: (radius + 3) * 2
+                )
+            )
+        )
 
+        ringGlowLayer.path = glowPath.cgPath
+        ringGlowLayer.shadowPath = glowPath.cgPath
         ringLayer.path = path.cgPath
 
         collectionViewLayout.itemSize = CGSize(width: frame.size.height, height: frame.size.height)
@@ -241,6 +276,10 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         cell.contentView.alpha = 1.0
         cell.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
 
+        if item is EmptyItem {
+            cell.contentView.alpha = 0.0
+        }
+
         cell.accessibilityIdentifier = CarouselElements.lensCell.id
         cell.accessibilityLabel = item.lensId
 
@@ -314,12 +353,11 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         // item index
         let currIndex = Int(curr)
 
-        // check if items are empty items (as they are special/inverse cases)
-        // normal: transform is max diff (in this case 0.20) multiplied by offset delta
-        // empty: transform scale decreases as cell gets closer to center
+        // Empty items represent "no lens" and are selected by the fixed center
+        // indicator, so the moving collection cell stays hidden during scroll.
         if currIndex >= 0, currIndex < items.count, items[currIndex] is EmptyItem {
             transform = 0.6 + delta * 0.20
-            alpha = pow(delta, 7) * 1.0 // exponential alpha change
+            alpha = 0.0
         } else {
             transform = 1.0 - (delta * 0.20)
         }

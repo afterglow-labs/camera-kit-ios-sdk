@@ -334,7 +334,7 @@ private final class SnapAttributionContainerView: UIView {
         isUserInteractionEnabled = false
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -156),
+            snapAttributionView.topAnchor.constraint(equalTo: bottomAnchor, constant: -50),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }
@@ -353,12 +353,18 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         let view = InclusiveCameraControlsView()
         context.coordinator.controlsView = view
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
-        view.updateAdjustmentAvailability(tone: state.toneMapAvailable, portrait: state.portraitAvailable)
+        view.updateAdjustmentAvailability(
+            tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
+            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
+        )
         return view
     }
 
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
-        uiView.updateAdjustmentAvailability(tone: state.toneMapAvailable, portrait: state.portraitAvailable)
+        uiView.updateAdjustmentAvailability(
+            tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
+            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
+        )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
     }
 
@@ -683,7 +689,7 @@ struct LensFooter: View {
             .frame(width: 32, height: 32)
             .opacity(state.selectedLens == nil ? 0 : 1)
         }
-        .padding(.bottom, 22)
+        .padding(.bottom, 38)
     }
 
     private func takePhoto() {

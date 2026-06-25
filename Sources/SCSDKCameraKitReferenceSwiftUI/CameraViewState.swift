@@ -91,11 +91,14 @@ public class CameraViewState: NSObject, ObservableObject {
             orientation: .portrait,
             textInputContextProvider: nil,
             agreementsPresentationContextProvider: nil,
-            completion: nil
+            completion: { [weak self, weak controller] in
+                guard let self, let controller, self.configuredCameraController === controller else { return }
+                self.updateAdjustmentAvailability()
+                controller.cameraKit.adjustments.processor?.addObserver(self)
+            }
         )
         updateAdjustmentAvailability()
         onChromeHiddenChange?(chromeHidden)
-        controller.cameraKit.adjustments.processor?.addObserver(self)
     }
 }
 

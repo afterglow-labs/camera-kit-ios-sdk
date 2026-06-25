@@ -136,13 +136,44 @@ open class CameraView: UIView {
         return view
     }()
 
-    /// camera button to capture/record
-    public let cameraButton: CameraButton = {
-        let view = CameraButton()
-        view.accessibilityIdentifier = CameraElements.cameraButton.id
-        view.isAccessibilityElement = true
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
+    /// Button for taking still photos.
+    public let photoCaptureButton: UIButton = {
+        let button = UIButton(type: .custom)
+        let image = UIImage(systemName: "camera.fill")?
+            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        button.accessibilityLabel = "Take photo"
+        button.backgroundColor = UIColor.black.withAlphaComponent(0.42)
+        button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        button.layer.borderWidth = 2.0
+        button.layer.cornerRadius = 17.0
+        button.tintColor = .white
+        button.setImage(image, for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    /// Button for starting and stopping video recording.
+    public let videoCaptureButton: UIButton = {
+        let button = UIButton(type: .custom)
+        button.accessibilityLabel = "Start recording"
+        button.backgroundColor = UIColor(hex: 0xFF3447)
+        button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        button.layer.borderWidth = 2.0
+        button.layer.cornerRadius = 19.0
+        button.tintColor = .white
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    /// Compact capture controls shown below the lens carousel.
+    public let captureControlsView: UIStackView = {
+        let stackView = UIStackView()
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.distribution = .equalSpacing
+        stackView.spacing = 18.0
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        return stackView
     }()
 
     /// media picker to allow using photos from camera roll in lenses
@@ -212,8 +243,8 @@ extension CameraView {
         setupPortraitButtons()
         setupHintLabel()
         setupLensLabel()
-        setupCameraRing()
         setupCarousel()
+        setupCaptureControls()
         setupMediaPicker()
         setupMessageView()
         setupSnapAttributionView()
@@ -299,21 +330,38 @@ extension CameraView {
         NSLayoutConstraint.activate([
             carouselView.leadingAnchor.constraint(equalTo: leadingAnchor),
             carouselView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            carouselView.centerYAnchor.constraint(equalTo: cameraButton.centerYAnchor),
+            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -74.0),
             carouselView.heightAnchor.constraint(equalToConstant: 62.0),
         ])
     }
 }
 
-// MARK: Camera Ring
+// MARK: Capture Controls
 
 extension CameraView {
-    private func setupCameraRing() {
-        addSubview(cameraButton)
+    private func setupCaptureControls() {
+        captureControlsView.addArrangedSubview(photoCaptureButton)
+        captureControlsView.addArrangedSubview(videoCaptureButton)
+        addSubview(captureControlsView)
+
         NSLayoutConstraint.activate([
-            cameraButton.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -28.0),
-            cameraButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+            photoCaptureButton.widthAnchor.constraint(equalToConstant: 34.0),
+            photoCaptureButton.heightAnchor.constraint(equalToConstant: 34.0),
+            videoCaptureButton.widthAnchor.constraint(equalToConstant: 38.0),
+            videoCaptureButton.heightAnchor.constraint(equalToConstant: 38.0),
+            captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            captureControlsView.topAnchor.constraint(equalTo: carouselView.bottomAnchor, constant: 4.0),
+            captureControlsView.heightAnchor.constraint(equalToConstant: 42.0),
         ])
+    }
+
+    public func setVideoCaptureButtonRecording(_ isRecording: Bool) {
+        videoCaptureButton.accessibilityLabel = isRecording ? "Stop recording" : "Start recording"
+        videoCaptureButton.backgroundColor = UIColor(hex: 0xFF3447).withAlphaComponent(isRecording ? 0.72 : 1.0)
+        let image = isRecording
+            ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
+            : nil
+        videoCaptureButton.setImage(image, for: .normal)
     }
 }
 
@@ -323,7 +371,7 @@ extension CameraView {
     private func setupMediaPicker() {
         addSubview(mediaPickerView)
         NSLayoutConstraint.activate([
-            mediaPickerView.bottomAnchor.constraint(equalTo: cameraButton.topAnchor),
+            mediaPickerView.bottomAnchor.constraint(equalTo: carouselView.topAnchor),
             mediaPickerView.centerXAnchor.constraint(equalTo: centerXAnchor),
             mediaPickerView.widthAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.widthAnchor),
         ])

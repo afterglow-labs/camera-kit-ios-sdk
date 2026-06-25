@@ -54,6 +54,8 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     // The backing view
     public let cameraView = CameraView()
 
+    private var recordingActive = false
+
     override open func loadView() {
         view = cameraView
     }
@@ -303,6 +305,12 @@ private extension CameraViewController {
         cameraView.cameraActionsView.flipCameraButton.addTarget(
             self, action: #selector(flip(sender:)), for: .touchUpInside
         )
+        cameraView.photoCaptureButton.addTarget(
+            self, action: #selector(photoCaptureButtonPressed(_:)), for: .touchUpInside
+        )
+        cameraView.videoCaptureButton.addTarget(
+            self, action: #selector(videoCaptureButtonPressed(_:)), for: .touchUpInside
+        )
 
         setupFlashButtons()
         setupToneMapAdjustmentButtons()
@@ -310,9 +318,6 @@ private extension CameraViewController {
 
         cameraView.carouselView.delegate = self
         cameraView.carouselView.dataSource = self
-
-        cameraView.cameraButton.delegate = self
-        cameraView.cameraButton.allowWhileRecording = [doubleTap, pinchGestureRecognizer]
 
         cameraView.mediaPickerView.provider = cameraController.lensMediaProvider
         cameraView.mediaPickerView.delegate = cameraController
@@ -543,11 +548,24 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
     }
 }
 
-// MARK: Camera Button
+// MARK: Capture Controls
 
-extension CameraViewController: CameraButtonDelegate {
-    public func cameraButtonTapped(_ cameraButton: CameraButton) {
-        print("Camera button tapped")
+extension CameraViewController {
+    @objc
+    private func photoCaptureButtonPressed(_ sender: UIButton) {
+        capturePhoto()
+    }
+
+    @objc
+    private func videoCaptureButtonPressed(_ sender: UIButton) {
+        if recordingActive {
+            finishVideoRecording()
+        } else {
+            startVideoRecording()
+        }
+    }
+
+    private func capturePhoto() {
         cameraController.takePhoto { image, error in
             guard let image else { return }
             DispatchQueue.main.async {
@@ -566,7 +584,10 @@ extension CameraViewController: CameraButtonDelegate {
         }
     }
 
-    public func cameraButtonHoldBegan(_ cameraButton: CameraButton) {
+    private func startVideoRecording() {
+        guard !recordingActive else { return }
+        recordingActive = true
+        cameraView.setVideoCaptureButtonRecording(true)
         print("Start recording")
         cameraController.startRecording()
         cameraView.hideAllControls()
@@ -586,16 +607,25 @@ extension CameraViewController: CameraButtonDelegate {
         cameraView.mediaPickerView.dismiss()
     }
 
-    public func cameraButtonHoldCancelled(_ cameraButton: CameraButton) {
+    private func cancelVideoRecording() {
+        guard recordingActive else { return }
+        recordingActive = false
+        cameraView.setVideoCaptureButtonRecording(false)
         cameraController.cancelRecording()
         restoreActiveCameraState()
     }
 
-    public func cameraButtonHoldEnded(_ cameraButton: CameraButton) {
+    private func finishVideoRecording() {
+        guard recordingActive else { return }
         print("Finish recording")
         cameraController.finishRecording { url, error in
             DispatchQueue.main.async {
-                guard let url else { return }
+                self.recordingActive = false
+                self.cameraView.setVideoCaptureButtonRecording(false)
+                guard let url else {
+                    self.restoreActiveCameraState()
+                    return
+                }
                 self.cameraController.clearLens(willReapply: true)
                 self.cameraController.restoreBrightnessIfNecessary()
                 let player = VideoPreviewViewController(videoUrl: url)
@@ -613,6 +643,8 @@ extension CameraViewController: CameraButtonDelegate {
     }
 
     private func restoreActiveCameraState() {
+        recordingActive = false
+        cameraView.setVideoCaptureButtonRecording(false)
         cameraView.cameraActionsView.expand()
         cameraView.carouselView.showCarousel()
         appOrientationDelegate?.unlockOrientation()
