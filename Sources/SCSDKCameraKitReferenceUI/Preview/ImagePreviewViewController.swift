@@ -64,14 +64,12 @@ public class ImagePreviewViewController: PreviewViewController {
     }
 
     override public func savePreviewPressed(_ sender: UIButton) {
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAsset(from: self.image)
-        }) { saved, error in
+        VibeCheckPhotoLibrarySaver.save(image: image) { saved, error in
             var title: String
             var message: String
             if saved {
                 title = "Save Success"
-                message = "Successfully saved photo to library"
+                message = "Successfully saved photo to Vibe Check"
             } else {
                 title = "Save Failure"
                 message = "Failed to save photo to library"

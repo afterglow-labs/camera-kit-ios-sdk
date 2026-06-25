@@ -76,6 +76,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public let captureSession: AVCaptureSession
 
     private let captureSessionQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.capture-session")
+    private var configuredOrientation: AVCaptureVideoOrientation = .portrait
+    private var configuredTextInputContextProvider: TextInputContextProvider?
+    private var configuredAgreementsPresentationContextProvider: AgreementsPresentationContextProvider?
 
     /// The CameraKit session
     public let cameraKit: CameraKitProtocol
@@ -200,6 +203,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         agreementsPresentationContextProvider: AgreementsPresentationContextProvider?,
         completion: (() -> Void)?
     ) {
+        configuredOrientation = orientation
+        configuredTextInputContextProvider = textInputContextProvider
+        configuredAgreementsPresentationContextProvider = agreementsPresentationContextProvider
         configureNotifications()
         promptForAccessIfNeeded { [self] in
             captureSessionQueue.async { [self] in
@@ -413,6 +419,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Configures the photo output to be ready to capture a new photo.
     fileprivate func configurePhotoCapture() {
+        guard photoCaptureOutput == nil else { return }
+
         // Add AVCapturePhotoOutput to capture session
         let avPhotoCaptureOutput = AVCapturePhotoOutput()
         if captureSession.canAddOutput(avPhotoCaptureOutput) {
@@ -421,6 +429,57 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         photoCaptureOutput = PhotoCaptureOutput(capturePhotoOutput: avPhotoCaptureOutput)
         if let photoCaptureOutput {
             cameraKit.add(output: photoCaptureOutput)
+        }
+    }
+
+    // MARK: Offline Media Input
+
+    /// Replaces the live camera feed with a static image as the CameraKit input source.
+    open func loadOfflineImage(_ image: UIImage, completion: (() -> Void)? = nil) {
+        let input = StaticImageInput(image: image, frameDuration: CMTime(value: 1, timescale: 30))
+        switchToOfflineInput(input, completion: completion)
+    }
+
+    /// Replaces the live camera feed with a looping video asset as the CameraKit input source.
+    open func loadOfflineVideoAsset(_ asset: AVAsset, audioEnabled: Bool = true, completion: (() -> Void)? = nil) {
+        let input = VideoAssetInput(asset: asset, audioEnabled: audioEnabled)
+        switchToOfflineInput(input, completion: completion)
+    }
+
+    private func switchToOfflineInput(_ input: Input, completion: (() -> Void)?) {
+        let lensToReapply = currentLens
+
+        captureSessionQueue.async { [weak self] in
+            guard let self else { return }
+
+            self.cameraKit.activeInput.stopRunning()
+            self.captureSession.stopRunning()
+            self.cameraKit.stop { [weak self] in
+                guard let self else { return }
+
+                let dataProvider = self.configureDataProvider()
+                let arInput = ARSessionInput()
+                self.cameraKit.start(
+                    input: input,
+                    arInput: arInput,
+                    cameraPosition: self.cameraPosition,
+                    videoOrientation: self.configuredOrientation,
+                    dataProvider: dataProvider,
+                    hintDelegate: self,
+                    textInputContextProvider: self.configuredTextInputContextProvider,
+                    agreementsPresentationContextProvider: self.configuredAgreementsPresentationContextProvider
+                )
+                input.startRunning()
+
+                if let lensToReapply {
+                    self.currentLens = nil
+                    self.applyLens(lensToReapply)
+                }
+
+                DispatchQueue.main.async {
+                    completion?()
+                }
+            }
         }
     }
 

@@ -88,14 +88,12 @@ public class VideoPreviewViewController: PreviewViewController {
     }
 
     override public func savePreviewPressed(_ sender: UIButton) {
-        PHPhotoLibrary.shared().performChanges({
-            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: self.videoUrl)
-        }) { saved, error in
+        VibeCheckPhotoLibrarySaver.saveVideo(at: videoUrl) { saved, error in
             var title: String
             var message: String
             if saved {
                 title = "Save Success"
-                message = "Successfully saved video to library"
+                message = "Successfully saved video to Vibe Check"
             } else {
                 title = "Save Failure"
                 message = "Failed to save video to library"
