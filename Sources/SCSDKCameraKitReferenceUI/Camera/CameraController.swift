@@ -612,10 +612,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     // MARK: Live Streaming
 
     /// Streams CameraKit's post-lens frame output to a WebSocket endpoint.
-    open func startWebSocketStreaming(to url: URL) {
+    open func startWebSocketStreaming(to url: URL, requestHeaders: [String: String] = [:]) {
         stopWebSocketStreaming()
 
-        let output = CameraKitWebSocketStreamOutput(url: url)
+        let output = CameraKitWebSocketStreamOutput(url: url, requestHeaders: requestHeaders)
         streamOutput = output
         cameraKit.add(output: output)
         output.startStreaming()

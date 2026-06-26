@@ -23,6 +23,7 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
     public private(set) var isStreaming = false
 
     private let url: URL
+    private let requestHeaders: [String: String]
     private let targetFrameInterval: CFTimeInterval
     private let jpegQuality: CGFloat
     private let maxDimension: CGFloat
@@ -37,11 +38,13 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
 
     public init(
         url: URL,
+        requestHeaders: [String: String] = [:],
         framesPerSecond: Double = 8,
         jpegQuality: CGFloat = 0.58,
         maxDimension: CGFloat = 540
     ) {
         self.url = url
+        self.requestHeaders = requestHeaders
         self.targetFrameInterval = 1 / max(1, framesPerSecond)
         self.jpegQuality = min(1, max(0.05, jpegQuality))
         self.maxDimension = max(160, maxDimension)
@@ -60,7 +63,12 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
             return
         }
         isStreaming = true
-        let task = session.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        for (name, value) in requestHeaders {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+
+        let task = session.webSocketTask(with: request)
         self.task = task
         stateLock.unlock()
 
