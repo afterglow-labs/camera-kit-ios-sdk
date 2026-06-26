@@ -60,11 +60,11 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
             return
         }
         isStreaming = true
-        currentlyRequiresPixelBuffer = true
         let task = session.webSocketTask(with: url)
         self.task = task
         stateLock.unlock()
 
+        currentlyRequiresPixelBuffer = true
         task.resume()
         sendHello()
     }
@@ -74,10 +74,10 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
         let task = self.task
         self.task = nil
         isStreaming = false
-        currentlyRequiresPixelBuffer = false
         encodingFrame = false
         stateLock.unlock()
 
+        currentlyRequiresPixelBuffer = false
         task?.cancel(with: .goingAway, reason: nil)
     }
 
