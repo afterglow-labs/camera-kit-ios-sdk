@@ -2,6 +2,7 @@
 
 import AVFoundation
 import CoreImage
+import ImageIO
 import QuartzCore
 import SCSDKCameraKit
 import UIKit
@@ -34,7 +35,7 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
     private let stateLock = NSLock()
     private var task: URLSessionWebSocketTask?
     private var lastFrameTime: CFTimeInterval = 0
-    private var encodingFrame = false
+    private var frameInFlight = false
 
     public init(
         url: URL,
@@ -82,7 +83,7 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
         let task = self.task
         self.task = nil
         isStreaming = false
-        encodingFrame = false
+        frameInFlight = false
         stateLock.unlock()
 
         currentlyRequiresPixelBuffer = false
@@ -100,12 +101,14 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
 
         let frame = PixelBufferFrame(pixelBuffer: pixelBuffer)
         encodingQueue.async { [weak self] in
-            defer {
-                self?.finishEncodingFrame()
+            guard let self, self.isStreaming else {
+                self?.finishFrameInFlight()
+                return
             }
-
-            guard let self, self.isStreaming else { return }
-            guard let data = self.jpegFrame(from: frame.pixelBuffer) else { return }
+            guard let data = self.jpegFrame(from: frame.pixelBuffer) else {
+                self.finishFrameInFlight()
+                return
+            }
             self.send(frame: data)
         }
     }
@@ -116,32 +119,37 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
         stateLock.lock()
         defer { stateLock.unlock() }
 
-        guard isStreaming, task != nil, !encodingFrame else { return false }
+        guard isStreaming, task != nil, !frameInFlight else { return false }
         guard now - lastFrameTime >= targetFrameInterval else { return false }
         lastFrameTime = now
-        encodingFrame = true
+        frameInFlight = true
         return true
     }
 
-    private func finishEncodingFrame() {
+    private func finishFrameInFlight() {
         stateLock.lock()
-        encodingFrame = false
+        frameInFlight = false
         stateLock.unlock()
     }
 
     private func jpegFrame(from pixelBuffer: CVPixelBuffer) -> Data? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let extent = ciImage.extent
-        let scale = min(1, maxDimension / max(extent.width, extent.height))
-        let outputImage: CIImage
-        if scale < 1 {
-            outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        } else {
-            outputImage = ciImage
-        }
+        autoreleasepool {
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let extent = ciImage.extent
+            let scale = min(1, maxDimension / max(extent.width, extent.height))
+            let outputImage: CIImage
+            if scale < 1 {
+                outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            } else {
+                outputImage = ciImage
+            }
 
-        guard let cgImage = context.createCGImage(outputImage, from: outputImage.extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: jpegQuality)
+            return context.jpegRepresentation(
+                of: outputImage,
+                colorSpace: CGColorSpaceCreateDeviceRGB(),
+                options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): jpegQuality]
+            )
+        }
     }
 
     private func sendHello() {
@@ -162,7 +170,14 @@ public final class CameraKitWebSocketStreamOutput: NSObject, Output, OutputRequi
 
     private func send(frame: Data) {
         sendQueue.async { [weak self] in
-            self?.task?.send(.data(frame)) { error in
+            guard let self, self.isStreaming, let task = self.task else {
+                self?.finishFrameInFlight()
+                return
+            }
+            task.send(.data(frame)) { [weak self] error in
+                defer {
+                    self?.finishFrameInFlight()
+                }
                 if error != nil {
                     self?.stopStreaming()
                 }
