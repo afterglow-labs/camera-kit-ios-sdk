@@ -597,7 +597,6 @@ extension CameraViewController {
                 self?.cameraView.cameraActionsView.collapse()
             }
         )
-        cameraView.carouselView.hideCarousel()
         appOrientationDelegate?.lockOrientation(currentInterfaceOrientationMask)
         if #available(iOS 16.0, *) {
             UIView.performWithoutAnimation {
