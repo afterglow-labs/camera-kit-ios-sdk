@@ -98,6 +98,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// An output used for recording videos.
     public var recorder: Recorder?
 
+    /// An output used for live web preview streaming.
+    public private(set) var streamOutput: CameraKitWebSocketStreamOutput?
+
     // MARK: Data providers
 
     /// Media provider for CameraKit.
@@ -229,6 +232,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// CameraKit/capture pipeline owns the camera at a time.
     public func stop(completion: (() -> Void)? = nil) {
         captureSessionQueue.async { [self] in
+            stopWebSocketStreaming()
             cameraKit.activeInput.stopRunning()
             cameraKit.stop {
                 DispatchQueue.main.async {
@@ -603,6 +607,26 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
         }
         uiDelegate?.cameraControllerRequestedSnapAttributionViewShow(self)
+    }
+
+    // MARK: Live Streaming
+
+    /// Streams CameraKit's post-lens frame output to a WebSocket endpoint.
+    open func startWebSocketStreaming(to url: URL) {
+        stopWebSocketStreaming()
+
+        let output = CameraKitWebSocketStreamOutput(url: url)
+        streamOutput = output
+        cameraKit.add(output: output)
+        output.startStreaming()
+    }
+
+    /// Stops the active live web preview stream.
+    open func stopWebSocketStreaming() {
+        guard let output = streamOutput else { return }
+        output.stopStreaming()
+        cameraKit.remove(output: output)
+        streamOutput = nil
     }
 
     // MARK: Lens Application
