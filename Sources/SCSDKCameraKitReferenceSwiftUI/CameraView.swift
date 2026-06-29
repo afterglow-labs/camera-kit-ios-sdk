@@ -78,6 +78,8 @@ public struct CameraView: View {
             .opacity(chromeOpacity)
             .allowsHitTesting(!state.chromeHidden)
             HStack {
+                Spacer(minLength: 0)
+
                 CarouselView(
                     availableLenses: $state.lenses,
                     selectedLens: $state.selectedLens,
@@ -87,9 +89,7 @@ public struct CameraView: View {
                 .frame(maxHeight: .infinity)
                 .padding(.top, 128)
                 .padding(.bottom, 132)
-                .padding(.leading, 10)
-
-                Spacer(minLength: 0)
+                .padding(.trailing, 10)
             }
             .opacity(chromeOpacity)
             .allowsHitTesting(!state.chromeHidden)

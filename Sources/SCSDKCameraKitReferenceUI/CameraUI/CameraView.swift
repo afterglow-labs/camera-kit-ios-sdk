@@ -329,7 +329,7 @@ extension CameraView {
     private func setupCarousel() {
         addSubview(carouselView)
         NSLayoutConstraint.activate([
-            carouselView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10.0),
+            carouselView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10.0),
             carouselView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 128.0),
             carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -96.0),
             carouselView.widthAnchor.constraint(equalToConstant: 62.0),
