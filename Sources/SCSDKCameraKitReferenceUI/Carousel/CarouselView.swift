@@ -24,6 +24,20 @@ public protocol CarouselViewDataSource: AnyObject {
 
 /// A view that manages an ordered collection of data items (eg. lenses) and displays them in a swipeable row with one item always selected.
 public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    public enum Orientation {
+        case horizontal
+        case vertical
+
+        var scrollDirection: UICollectionView.ScrollDirection {
+            switch self {
+            case .horizontal:
+                return .horizontal
+            case .vertical:
+                return .vertical
+            }
+        }
+    }
+
     /// The delegate for the carousel view which will be notified of the carousel view actions.
     public weak var delegate: CarouselViewDelegate?
 
@@ -42,6 +56,19 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
 
     /// Current selected item or nil if none are selected (ie. when carousel is empty).
     public private(set) var selectedItem: CarouselItem = EmptyItem()
+
+    public var orientation: Orientation = .horizontal {
+        didSet {
+            guard oldValue != orientation else { return }
+            collectionViewLayout.scrollDirection = orientation.scrollDirection
+            collectionView.contentInset = .zero
+            lastLaidOutBoundsSize = .zero
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+            collectionViewLayout.invalidateLayout()
+            selectItem(selectedItem, animated: false)
+        }
+    }
 
     /// Current list of items in the carousel.
     private var items = [CarouselItem]()
@@ -63,7 +90,7 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         layout.dataSource = self
         layout.minimumInteritemSpacing = 8.0
         layout.minimumLineSpacing = 8.0
-        layout.scrollDirection = .horizontal
+        layout.scrollDirection = orientation.scrollDirection
         return layout
     }()
 
@@ -158,7 +185,12 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     }
 
     override public var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: 62)
+        switch orientation {
+        case .horizontal:
+            return CGSize(width: UIView.noIntrinsicMetric, height: 62)
+        case .vertical:
+            return CGSize(width: 62, height: UIView.noIntrinsicMetric)
+        }
     }
 
     override public func layoutSubviews() {
@@ -167,14 +199,18 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         guard bounds.size != lastLaidOutBoundsSize else { return }
         lastLaidOutBoundsSize = bounds.size
 
-        // collection view padding is half of frame - half of item size (frame height)
-        let padding = (frame.size.width / 2.0) - (frame.size.height / 2.0)
-        collectionView.contentInset.left = padding
-        collectionView.contentInset.right = padding
+        let itemLength = carouselItemLength
+        let padding = max(0, primaryBoundsLength / 2.0 - itemLength / 2.0)
+        switch orientation {
+        case .horizontal:
+            collectionView.contentInset = UIEdgeInsets(top: 0, left: padding, bottom: 0, right: padding)
+        case .vertical:
+            collectionView.contentInset = UIEdgeInsets(top: padding, left: 0, bottom: padding, right: 0)
+        }
 
-        let cameraRingX = frame.midX
-        let cameraRingY = frame.size.height / 2.0
-        let radius = max(1, min(CameraButton.Constants.ringSize, frame.size.height) / 2 - 5)
+        let cameraRingX = bounds.midX
+        let cameraRingY = bounds.midY
+        let radius = max(1, min(CameraButton.Constants.ringSize, itemLength) / 2 - 5)
         let ringCenter = CGPoint(x: cameraRingX, y: cameraRingY)
         let path = UIBezierPath(
             arcCenter: ringCenter, radius: radius, startAngle: CGFloat.pi / -2.0,
@@ -203,7 +239,7 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         ringGlowLayer.shadowPath = glowPath.cgPath
         ringLayer.path = path.cgPath
 
-        collectionViewLayout.itemSize = CGSize(width: frame.size.height, height: frame.size.height)
+        collectionViewLayout.itemSize = CGSize(width: itemLength, height: itemLength)
         collectionViewLayout.invalidateLayout()
         selectItem(selectedItem, animated: false)
     }
@@ -223,7 +259,7 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         if let index = items.firstIndex(where: { $0.id == selected.id }) {
             selectedItem = selected
             collectionView.scrollToItem(
-                at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: animated
+                at: IndexPath(item: index, section: 0), at: selectedScrollPosition, animated: animated
             )
             return true
         } else {
@@ -318,17 +354,16 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     }
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+        collectionView.scrollToItem(at: indexPath, at: selectedScrollPosition, animated: true)
         selectItemHelper(at: indexPath.item)
     }
 
     // MARK: Scroll View
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        // add back scroll padding
-        let offset = scrollView.contentOffset.x + scrollView.contentInset.left
+        let offset = primaryContentOffset(in: scrollView) + primaryContentInset(in: scrollView)
         // total item size = item size + spacing
-        let totalItemSize = collectionViewLayout.itemSize.height + collectionViewLayout.minimumInteritemSpacing
+        let totalItemSize = carouselItemLength + collectionViewLayout.minimumLineSpacing
 
         // get indicies for closest two items
         let index = offset / totalItemSize
@@ -410,6 +445,51 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
 
         selectedItem = items[index]
         delegate?.carouselView(self, didSelect: items[index], at: index)
+    }
+
+    private var carouselItemLength: CGFloat {
+        switch orientation {
+        case .horizontal:
+            return max(1, bounds.height)
+        case .vertical:
+            return max(1, bounds.width)
+        }
+    }
+
+    private var primaryBoundsLength: CGFloat {
+        switch orientation {
+        case .horizontal:
+            return bounds.width
+        case .vertical:
+            return bounds.height
+        }
+    }
+
+    private var selectedScrollPosition: UICollectionView.ScrollPosition {
+        switch orientation {
+        case .horizontal:
+            return .centeredHorizontally
+        case .vertical:
+            return .centeredVertically
+        }
+    }
+
+    private func primaryContentOffset(in scrollView: UIScrollView) -> CGFloat {
+        switch orientation {
+        case .horizontal:
+            return scrollView.contentOffset.x
+        case .vertical:
+            return scrollView.contentOffset.y
+        }
+    }
+
+    private func primaryContentInset(in scrollView: UIScrollView) -> CGFloat {
+        switch orientation {
+        case .horizontal:
+            return scrollView.contentInset.left
+        case .vertical:
+            return scrollView.contentInset.top
+        }
     }
 }
 

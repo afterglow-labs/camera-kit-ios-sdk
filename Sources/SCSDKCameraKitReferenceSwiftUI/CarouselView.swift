@@ -12,12 +12,25 @@ public struct CarouselView: UIViewRepresentable {
     /// The currently selected lens, if one is selected.
     @Binding var selectedLens: Lens?
 
+    let orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation
+
+    public init(
+        availableLenses: Binding<[Lens]>,
+        selectedLens: Binding<Lens?>,
+        orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation = .horizontal
+    ) {
+        self._availableLenses = availableLenses
+        self._selectedLens = selectedLens
+        self.orientation = orientation
+    }
+
     public func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
     public func makeUIView(context: Context) -> SCSDKCameraKitReferenceUI.CarouselView {
         let inner = SCSDKCameraKitReferenceUI.CarouselView()
+        inner.orientation = orientation
         inner.delegate = context.coordinator
         inner.dataSource = context.coordinator
         return inner
@@ -25,6 +38,7 @@ public struct CarouselView: UIViewRepresentable {
 
     public func updateUIView(_ uiView: SCSDKCameraKitReferenceUI.CarouselView, context: Context) {
         context.coordinator.parent = self
+        uiView.orientation = orientation
         let item = context.coordinator.item(for: selectedLens)
         if context.coordinator.availableLenses.map(\.id) != availableLenses.map(\.id) {
             context.coordinator.availableLenses = availableLenses

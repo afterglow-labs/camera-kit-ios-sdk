@@ -77,6 +77,22 @@ public struct CameraView: View {
             }
             .opacity(chromeOpacity)
             .allowsHitTesting(!state.chromeHidden)
+            HStack {
+                CarouselView(
+                    availableLenses: $state.lenses,
+                    selectedLens: $state.selectedLens,
+                    orientation: .vertical
+                )
+                .frame(width: 62)
+                .frame(maxHeight: .infinity)
+                .padding(.top, 128)
+                .padding(.bottom, 132)
+                .padding(.leading, 10)
+
+                Spacer(minLength: 0)
+            }
+            .opacity(chromeOpacity)
+            .allowsHitTesting(!state.chromeHidden)
             SnapAttributionContainerRepresentable()
                 .edgesIgnoringSafeArea(.all)
                 .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
@@ -644,9 +660,6 @@ struct LensFooter: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            CarouselView(availableLenses: $state.lenses, selectedLens: $state.selectedLens)
-                .frame(height: 62)
-                .padding(.bottom, 62)
             HStack(spacing: 18) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")

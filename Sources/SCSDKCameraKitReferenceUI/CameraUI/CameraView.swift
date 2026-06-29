@@ -132,6 +132,7 @@ open class CameraView: UIView {
     /// carousel to scroll through lenses
     public let carouselView: CarouselView = {
         let view = CarouselView()
+        view.orientation = .vertical
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -328,10 +329,10 @@ extension CameraView {
     private func setupCarousel() {
         addSubview(carouselView)
         NSLayoutConstraint.activate([
-            carouselView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            carouselView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -136.0),
-            carouselView.heightAnchor.constraint(equalToConstant: 62.0),
+            carouselView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 10.0),
+            carouselView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 128.0),
+            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -96.0),
+            carouselView.widthAnchor.constraint(equalToConstant: 62.0),
         ])
     }
 }

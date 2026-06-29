@@ -39,20 +39,21 @@ public class CarouselCollectionViewLayout: UICollectionViewFlowLayout {
     ) -> CGPoint {
         guard let collectionView else { return proposedContentOffset }
 
-        // offset the left padding
-        let offset = proposedContentOffset.x + collectionView.contentInset.left
-        // page index is offset divided by the item view size (height + spacing / 2.0)
-        let index = offset / (itemSize.height + minimumInteritemSpacing)
+        let isVertical = scrollDirection == .vertical
+        let proposedOffset = isVertical ? proposedContentOffset.y : proposedContentOffset.x
+        let inset = isVertical ? collectionView.contentInset.top : collectionView.contentInset.left
+        let itemExtent = isVertical ? itemSize.height : itemSize.width
+        let spacing = minimumLineSpacing
+        let offset = proposedOffset + inset
+        let index = offset / (itemExtent + spacing)
         let pageIndex = index.rounded()
 
         delegate?.carouselLayout(self, willTargetIndex: Int(pageIndex))
 
-        // new target offset is page index multiplied by content size + spacing
-        // also need to make sure to add back the left padding
-        let newTarget =
-            pageIndex * (itemSize.height + minimumInteritemSpacing)
-                - collectionView.contentInset.left
-        return CGPoint(x: newTarget, y: proposedContentOffset.y)
+        let newTarget = pageIndex * (itemExtent + spacing) - inset
+        return isVertical
+            ? CGPoint(x: proposedContentOffset.x, y: newTarget)
+            : CGPoint(x: newTarget, y: proposedContentOffset.y)
     }
 
     override public func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
