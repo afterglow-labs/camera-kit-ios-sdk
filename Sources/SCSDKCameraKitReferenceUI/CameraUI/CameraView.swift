@@ -330,7 +330,7 @@ extension CameraView {
         NSLayoutConstraint.activate([
             carouselView.leadingAnchor.constraint(equalTo: leadingAnchor),
             carouselView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -74.0),
+            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -136.0),
             carouselView.heightAnchor.constraint(equalToConstant: 62.0),
         ])
     }
@@ -350,7 +350,7 @@ extension CameraView {
             videoCaptureButton.widthAnchor.constraint(equalToConstant: 38.0),
             videoCaptureButton.heightAnchor.constraint(equalToConstant: 38.0),
             captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            captureControlsView.topAnchor.constraint(equalTo: carouselView.bottomAnchor, constant: 4.0),
+            captureControlsView.topAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -70.0),
             captureControlsView.heightAnchor.constraint(equalToConstant: 42.0),
         ])
     }
@@ -435,7 +435,7 @@ extension CameraView {
     private func setupSnapAttributionView() {
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.topAnchor.constraint(equalTo: cameraBottomBar.topAnchor),
+            snapAttributionView.topAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -118.0),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }

@@ -334,7 +334,7 @@ private final class SnapAttributionContainerView: UIView {
         isUserInteractionEnabled = false
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.topAnchor.constraint(equalTo: bottomAnchor, constant: -50),
+            snapAttributionView.topAnchor.constraint(equalTo: bottomAnchor, constant: -118),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }
@@ -646,6 +646,7 @@ struct LensFooter: View {
         VStack(spacing: 8) {
             CarouselView(availableLenses: $state.lenses, selectedLens: $state.selectedLens)
                 .frame(height: 62)
+                .padding(.bottom, 62)
             HStack(spacing: 18) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
