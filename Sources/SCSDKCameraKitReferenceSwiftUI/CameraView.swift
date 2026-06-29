@@ -147,7 +147,10 @@ private struct PreviewLayer: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                PreviewView(cameraKit: cameraController.cameraKit)
+                PreviewView(
+                    cameraKit: cameraController.cameraKit,
+                    bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset
+                )
                     .onTapGesture(count: 2, perform: cameraController.flipCamera)
                     .gesture(
                         MagnificationGesture(minimumScaleDelta: 0)
@@ -167,6 +170,10 @@ private struct PreviewLayer: View {
         }
         .background(Color.black)
     }
+}
+
+private enum LensUILayout {
+    static let bottomSafeAreaInset: CGFloat = 180
 }
 
 @available(iOS 14.0, *)

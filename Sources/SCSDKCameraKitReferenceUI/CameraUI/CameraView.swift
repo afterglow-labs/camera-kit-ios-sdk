@@ -177,6 +177,14 @@ open class CameraView: UIView {
         return stackView
     }()
 
+    private let lensUIBottomOcclusionView: UIView = {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
     /// media picker to allow using photos from camera roll in lenses
     public lazy var mediaPickerView: MediaPickerView = {
         let view = MediaPickerView()
@@ -224,7 +232,7 @@ open class CameraView: UIView {
 
     override open func layoutSubviews() {
         super.layoutSubviews()
-        previewView.configureSafeArea(with: [lensLabel])
+        previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
         )
@@ -246,6 +254,7 @@ extension CameraView {
         setupLensLabel()
         setupCarousel()
         setupCaptureControls()
+        setupLensUIBottomOcclusionView()
         setupMediaPicker()
         setupMessageView()
         setupSnapAttributionView()
@@ -363,6 +372,20 @@ extension CameraView {
             ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
             : nil
         videoCaptureButton.setImage(image, for: .normal)
+    }
+}
+
+// MARK: Lens UI Safe Area
+
+extension CameraView {
+    private func setupLensUIBottomOcclusionView() {
+        addSubview(lensUIBottomOcclusionView)
+        NSLayoutConstraint.activate([
+            lensUIBottomOcclusionView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            lensUIBottomOcclusionView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            lensUIBottomOcclusionView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            lensUIBottomOcclusionView.heightAnchor.constraint(equalToConstant: Constants.lensUIBottomSafeAreaInset),
+        ])
     }
 }
 
@@ -630,5 +653,11 @@ public extension CameraView {
         addSubview(view)
 
         view.show()
+    }
+}
+
+private extension CameraView {
+    enum Constants {
+        static let lensUIBottomSafeAreaInset: CGFloat = 180
     }
 }
