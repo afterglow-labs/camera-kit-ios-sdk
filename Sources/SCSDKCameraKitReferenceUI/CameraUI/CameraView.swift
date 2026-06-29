@@ -224,7 +224,7 @@ open class CameraView: UIView {
 
     override open func layoutSubviews() {
         super.layoutSubviews()
-        previewView.configureSafeArea(with: [carouselView, lensLabel])
+        previewView.configureSafeArea(with: [lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
         )
