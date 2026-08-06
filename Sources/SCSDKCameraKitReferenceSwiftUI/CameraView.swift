@@ -39,17 +39,20 @@ public struct CameraView: View {
     @Binding private var chromeHidden: Bool
     private let onChromeHiddenChange: ((Bool) -> Void)?
     private let previewAspectRatio: CameraPreviewAspectRatio
+    private let previewMirrored: Bool
     private let showsChromeVisibilityButton: Bool
 
     public init(
         cameraController: CameraController,
         previewAspectRatio: CameraPreviewAspectRatio = .fullScreen,
+        previewMirrored: Bool = false,
         chromeHidden: Binding<Bool> = .constant(false),
         showsChromeVisibilityButton: Bool = true,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
         self.cameraController = cameraController
         self.previewAspectRatio = previewAspectRatio
+        self.previewMirrored = previewMirrored
         self._chromeHidden = chromeHidden
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
         self.onChromeHiddenChange = onChromeHiddenChange
@@ -62,7 +65,8 @@ public struct CameraView: View {
             PreviewLayer(
                 state: state,
                 cameraController: cameraController,
-                aspectRatio: previewAspectRatio
+                aspectRatio: previewAspectRatio,
+                mirrored: previewMirrored
             )
             .edgesIgnoringSafeArea(.all)
             VStack {
@@ -143,6 +147,7 @@ private struct PreviewLayer: View {
     @ObservedObject var state: CameraViewState
     let cameraController: CameraController
     let aspectRatio: CameraPreviewAspectRatio
+    let mirrored: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -151,6 +156,7 @@ private struct PreviewLayer: View {
                     cameraKit: cameraController.cameraKit,
                     bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset
                 )
+                    .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                     .onTapGesture(count: 2, perform: cameraController.flipCamera)
                     .gesture(
                         MagnificationGesture(minimumScaleDelta: 0)
