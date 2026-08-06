@@ -53,9 +53,11 @@ A set of [open-sourced](./Sources), reusable UI components and utilities for eas
 - `SCSDKCameraKitReferenceSwiftUI`
 
 Modules required for testing your in-development lenses (see [Push-to-Device](https://developers.snap.com/camera-kit/guides/mobile-customization/in-app-lens-testing)):
-- `SCSDKCameraKitBaseExtension`
 - `SCSDKCameraKitLoginKitAuth`
 - `SCSDKCameraKitPushToDeviceExtension`
+
+`SCSDKCameraKitLoginKitAuth` uses the Afterglow Labs Snap Kit fork's
+`SnapSDKLoginKit` product. Creative Kit is not included in that dependency.
 
 ## Installation
 ### [Swift Package Manager](https://github.com/apple/swift-package-manager)
