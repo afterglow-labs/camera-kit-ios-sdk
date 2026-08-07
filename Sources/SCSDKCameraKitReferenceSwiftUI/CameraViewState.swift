@@ -70,6 +70,12 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Current ring light color selected through the SDK flash control.
     @Published var ringLightColor: UIColor = .white
 
+    /// Current Camera Kit tone-map amount. Zero means disabled.
+    @Published var toneMapAmount: Double = 0
+
+    /// Current Camera Kit portrait blur. Zero means disabled.
+    @Published var portraitBlur: Double = 0
+
     /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
     @Published var chromeHidden = false
 
@@ -185,6 +191,14 @@ extension CameraViewState: CameraControllerUIDelegate {
 
     public func cameraControllerRequestedRingLightHide(_ controller: CameraController) {
         showingRingLight = false
+    }
+
+    public func cameraControllerControlsDidChange(_ controller: CameraController) {
+        showingRingLight = controller.isRingLightEnabled
+        ringLightIntensity = controller.ringLightIntensity
+        ringLightColor = controller.ringLightColor
+        toneMapAmount = controller.toneMapAdjustmentAmount
+        portraitBlur = controller.portraitAdjustmentBlur
     }
 
     public func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {

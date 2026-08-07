@@ -29,6 +29,10 @@ public protocol CameraControllerUIDelegate: AnyObject {
     /// - Parameter controller: The camera controller.
     func cameraControllerRequestedRingLightHide(_ controller: CameraController)
 
+    /// Notifies the delegate that Camera Kit adjustment or ring-light state changed.
+    /// Implementations should refresh any controls that mirror the controller's public state.
+    func cameraControllerControlsDidChange(_ controller: CameraController)
+
     /// Notifies the delegate that the flash state has changed such that the flash control should be hidden.
     /// - Parameter controller: The camera controller.
     func cameraControllerRequestedFlashControlHide(_ controller: CameraController)
@@ -62,6 +66,10 @@ public protocol CameraControllerUIDelegate: AnyObject {
     func cameraController(_ controller: CameraController, requestedHintHideFor lens: Lens)
 }
 
+public extension CameraControllerUIDelegate {
+    func cameraControllerControlsDidChange(_ controller: CameraController) {}
+}
+
 // MARK: Class Definition and State
 
 /// A controller which manages the camera and lenses stack on behalf of its owner
@@ -91,6 +99,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public private(set) var cameraPosition: AVCaptureDevice.Position = .front {
         didSet {
             cameraKit.cameraPosition = cameraPosition
+            captureSessionQueue.async { [weak self] in
+                self?.replaceVideoInputIfNeeded(for: self?.cameraPosition ?? .front)
+            }
         }
     }
 
@@ -176,6 +187,29 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             handleFlashStateChange(oldValue: oldValue)
         }
     }
+
+    /// Called on the main queue whenever public Camera Kit control state changes.
+    public var controlsDidChange: (() -> Void)?
+
+    /// The current intensity of the front-facing screen ring light.
+    public private(set) var ringLightIntensity: CGFloat = 0.2
+
+    /// The current color of the front-facing screen ring light.
+    public private(set) var ringLightColor: UIColor = .white
+
+    /// Whether the front-facing screen ring light is currently enabled.
+    public var isRingLightEnabled: Bool {
+        flashState == .on(.ring)
+    }
+
+    /// The requested Camera Kit tone-map amount. Zero means disabled.
+    public private(set) var toneMapAdjustmentAmount: Double = 0
+
+    /// The requested Camera Kit portrait blur. Zero means disabled.
+    public private(set) var portraitAdjustmentBlur: Double = 0
+
+    /// Width-to-height ratio used for captured photos and videos. Nil follows the screen ratio.
+    public private(set) var captureAspectRatio: CGFloat?
 
     // MARK: Initializers
 
@@ -333,6 +367,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         applyPreferredWhiteBalanceAdjustment()
         DispatchQueue.main.async { [weak self] in
             self?.applyPreferredToneMapAdjustment()
+            self?.applyPreferredPortraitAdjustment()
         }
     }
 
@@ -365,6 +400,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public func flipCamera() {
         cameraPosition = cameraPosition == .front ? .back : .front
         updateFlashAfterFlip()
+        notifyControlsDidChange()
     }
 
     /// Options to support when setting a point of interest
@@ -446,7 +482,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             with: settings,
             outputSize: OutputSizeHelper.normalizedSize(
                 for: cameraKit.activeInput.frameSize,
-                aspectRatio: UIScreen.main.bounds.width / UIScreen.main.bounds.height
+                aspectRatio: resolvedCaptureAspectRatio
             )
         ) { image, error in
             completion?(image, error)
@@ -585,7 +621,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             orientation: cameraKit.activeInput.frameOrientation,
             size: OutputSizeHelper.normalizedSize(
                 for: cameraKit.activeInput.frameSize,
-                aspectRatio: UIScreen.main.bounds.width / UIScreen.main.bounds.height,
+                aspectRatio: resolvedCaptureAspectRatio,
                 orientation: cameraKit.activeInput.frameOrientation
             )
         )
@@ -740,18 +776,27 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// - Returns: Float representing the intensity of the tone map effect.
     /// - Note: Before calling this function, check whether or not the adjustment is available for the device. See `isToneMapAdjustmentAvailable`.
     public func enableToneMapAdjustment() -> Float? {
-        toneMapController = try? cameraKit.adjustments.processor?.apply(ToneMapAdjustment()) as? ToneMapAdjustmentController
-        return Float(toneMapController?.amount ?? 0)
+        if toneMapController == nil {
+            toneMapController = try? cameraKit.adjustments.processor?.apply(ToneMapAdjustment())
+                as? ToneMapAdjustmentController
+        }
+        guard let toneMapController else { return nil }
+
+        let amount = toneMapAdjustmentAmount > 0 ? toneMapAdjustmentAmount : max(Double(toneMapController.amount), 0.5)
+        toneMapAdjustmentAmount = min(max(amount, 0), 1)
+        toneMapController.amount = toneMapAdjustmentAmount
+        notifyControlsDidChange()
+        return Float(toneMapAdjustmentAmount)
     }
 
     /// Disables the tone map adjustment.
     public func disableToneMapAdjustment() {
-        guard let toneMapController else {
-            return
+        if let toneMapController {
+            cameraKit.adjustments.processor?.remove(toneMapController)
+            self.toneMapController = nil
         }
-
-        cameraKit.adjustments.processor?.remove(toneMapController)
-        self.toneMapController = nil
+        toneMapAdjustmentAmount = 0
+        notifyControlsDidChange()
     }
 
     /// Sets the tone map adjustment amount used for shadow/highlight balancing.
@@ -759,10 +804,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// A value of `0` disables the adjustment. Values above `0` enable Camera Kit's native tone mapping.
     public func setToneMapAdjustmentAmount(_ amount: Double) {
         let clampedAmount = min(max(amount, 0), 1)
-        preferredToneMapAdjustmentAmount = clampedAmount
+        toneMapAdjustmentAmount = clampedAmount
 
         DispatchQueue.main.async { [weak self] in
             self?.applyPreferredToneMapAdjustment()
+            self?.notifyControlsDidChange()
         }
     }
 
@@ -770,19 +816,36 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// - Returns: Float representing the intensity of the portrait blur effect.
     /// - Note: Before calling this function, check whether or not the adjustment is available for the device. See `isPortraitAdjustmentAvailable`.
     public func enablePortraitAdjustment() -> Float? {
-        portraitController = try? cameraKit.adjustments.processor?.apply(PortraitAdjustment()) as? PortraitAdjustmentController
+        if portraitController == nil {
+            portraitController = try? cameraKit.adjustments.processor?.apply(PortraitAdjustment())
+                as? PortraitAdjustmentController
+        }
+        guard let portraitController else { return nil }
 
-        return Float(portraitController?.blur ?? 0)
+        let blur = portraitAdjustmentBlur > 0 ? portraitAdjustmentBlur : max(Double(portraitController.blur), 0.5)
+        portraitAdjustmentBlur = min(max(blur, 0), 1)
+        portraitController.blur = portraitAdjustmentBlur
+        notifyControlsDidChange()
+        return Float(portraitAdjustmentBlur)
     }
 
     /// Disables the portrait adjustment.
     public func disablePortraitAdjustment() {
-        guard let portraitController else {
-            return
+        if let portraitController {
+            cameraKit.adjustments.processor?.remove(portraitController)
+            self.portraitController = nil
         }
+        portraitAdjustmentBlur = 0
+        notifyControlsDidChange()
+    }
 
-        cameraKit.adjustments.processor?.remove(portraitController)
-        self.portraitController = nil
+    /// Sets Camera Kit's pre-Lens portrait blur. Zero disables the adjustment.
+    public func setPortraitAdjustmentBlur(_ blur: Double) {
+        portraitAdjustmentBlur = min(max(blur, 0), 1)
+        DispatchQueue.main.async { [weak self] in
+            self?.applyPreferredPortraitAdjustment()
+            self?.notifyControlsDidChange()
+        }
     }
 
     /// Sets the exposure target bias on the active capture device.
@@ -803,6 +866,15 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         preferredWhiteBalanceTint = min(max(tint, -1), 1)
         captureSessionQueue.async { [weak self] in
             self?.applyPreferredWhiteBalanceAdjustment()
+        }
+    }
+
+    /// Sets the aspect ratio used by Camera Kit photo and video outputs.
+    public func setCaptureAspectRatio(_ aspectRatio: CGFloat?) {
+        if let aspectRatio, aspectRatio.isFinite, aspectRatio > 0 {
+            captureAspectRatio = aspectRatio
+        } else {
+            captureAspectRatio = nil
         }
     }
 
@@ -832,7 +904,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public func adjustmentControlView(_ control: AdjustmentControlView, sliderValueChanged value: Double) {
         switch AdjustmentControlView.Variant(rawValue: control.tag) {
         case .tone: setToneMapAdjustmentAmount(value)
-        case .portrait: portraitController?.blur = value
+        case .portrait: setPortraitAdjustmentBlur(value)
         default: break
         }
     }
@@ -846,9 +918,6 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Controller for adjusting the applied portrait adjustment.
     private var portraitController: PortraitAdjustmentController?
-
-    /// Preferred tone map amount to restore after Camera Kit starts or recreates the pipeline.
-    private var preferredToneMapAdjustmentAmount: Double = 0
 
     /// App-provided launch data merged into the selected lens's vendor data.
     private var lensLaunchDataOverrides: [String: String] = [:]
@@ -1034,7 +1103,7 @@ private extension CameraController {
     func configureDevice(for mediaType: AVMediaType) {
         guard
             let device = mediaType == .video
-            ? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition)
+            ? preferredVideoDevice(for: cameraPosition)
             : AVCaptureDevice.default(for: mediaType),
             let input = try? AVCaptureDeviceInput(device: device),
             captureSession.canAddInput(input)
@@ -1042,6 +1111,47 @@ private extension CameraController {
             return
         }
         captureSession.addInput(input)
+    }
+
+    func preferredVideoDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .back {
+            for deviceType in [AVCaptureDevice.DeviceType.builtInTripleCamera, .builtInDualWideCamera] {
+                if let device = AVCaptureDevice.default(deviceType, for: .video, position: .back) {
+                    return device
+                }
+            }
+        }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    func replaceVideoInputIfNeeded(for position: AVCaptureDevice.Position) {
+        guard
+            let desiredDevice = preferredVideoDevice(for: position),
+            cameraInputDevice?.uniqueID != desiredDevice.uniqueID,
+            let replacementInput = try? AVCaptureDeviceInput(device: desiredDevice)
+        else {
+            notifyControlsDidChange()
+            return
+        }
+
+        let currentInput = captureSession.inputs
+            .compactMap { $0 as? AVCaptureDeviceInput }
+            .first(where: { $0.device.hasMediaType(.video) })
+
+        captureSession.beginConfiguration()
+        if let currentInput {
+            captureSession.removeInput(currentInput)
+        }
+        if captureSession.canAddInput(replacementInput) {
+            captureSession.addInput(replacementInput)
+        } else if let currentInput, captureSession.canAddInput(currentInput) {
+            captureSession.addInput(currentInput)
+        }
+        captureSession.commitConfiguration()
+
+        applyPreferredExposureTargetBias()
+        applyPreferredWhiteBalanceAdjustment()
+        notifyControlsDidChange()
     }
 
     /// Directly sets the zoom level, if possible. Certain inputs may ignore calls to this function (eg: ARKit)
@@ -1133,8 +1243,10 @@ private extension CameraController {
     }
 
     private func applyPreferredToneMapAdjustment() {
-        guard preferredToneMapAdjustmentAmount > 0 else {
-            disableToneMapAdjustment()
+        guard toneMapAdjustmentAmount > 0 else {
+            if toneMapController != nil {
+                disableToneMapAdjustment()
+            }
             return
         }
 
@@ -1145,7 +1257,39 @@ private extension CameraController {
         if toneMapController == nil {
             _ = enableToneMapAdjustment()
         }
-        toneMapController?.amount = preferredToneMapAdjustmentAmount
+        toneMapController?.amount = toneMapAdjustmentAmount
+    }
+
+    private func applyPreferredPortraitAdjustment() {
+        guard portraitAdjustmentBlur > 0 else {
+            if portraitController != nil {
+                disablePortraitAdjustment()
+            }
+            return
+        }
+
+        guard isPortraitAdjustmentAvailable else { return }
+        if portraitController == nil {
+            _ = enablePortraitAdjustment()
+        }
+        portraitController?.blur = portraitAdjustmentBlur
+    }
+
+    private func notifyControlsDidChange() {
+        let notify = { [weak self] in
+            guard let self else { return }
+            self.uiDelegate?.cameraControllerControlsDidChange(self)
+            self.controlsDidChange?()
+        }
+        if Thread.isMainThread {
+            notify()
+        } else {
+            DispatchQueue.main.async(execute: notify)
+        }
+    }
+
+    private var resolvedCaptureAspectRatio: CGFloat {
+        captureAspectRatio ?? (UIScreen.main.bounds.width / UIScreen.main.bounds.height)
     }
 }
 
@@ -1318,6 +1462,30 @@ public extension CameraController {
         }
     }
 
+    /// Enables or disables the front-facing screen ring light.
+    func setRingLightEnabled(_ enabled: Bool) {
+        guard cameraPosition == .front else {
+            if isRingLightEnabled {
+                flashState = .off
+            }
+            return
+        }
+        lastFrontFlashMode = .ring
+        flashState = enabled ? .on(.ring) : .off
+    }
+
+    /// Sets the front-facing screen ring light intensity.
+    func setRingLightIntensity(_ intensity: CGFloat) {
+        ringLightIntensity = min(max(intensity, 0), 1)
+        notifyControlsDidChange()
+    }
+
+    /// Sets the front-facing screen ring light color.
+    func setRingLightColor(_ color: UIColor) {
+        ringLightColor = color
+        notifyControlsDidChange()
+    }
+
     /// Disables the camera flash.
     func disableFlash() {
         switch flashState {
@@ -1350,6 +1518,7 @@ public extension CameraController {
                 increaseBrightnessIfNecessary()
             }
         }
+        notifyControlsDidChange()
     }
 
     /// Restores brightness to what it was before the ring light was enabled.

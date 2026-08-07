@@ -218,8 +218,45 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         cameraView.ringLightView.isHidden = true
     }
 
+    open func cameraControllerControlsDidChange(_ controller: CameraController) {
+        cameraView.ringLightView.changeColor(to: controller.ringLightColor)
+        cameraView.ringLightView.ringLightGradient.updateIntensity(
+            to: controller.ringLightIntensity,
+            animated: true
+        )
+        cameraView.flashControlView.ringLightIntensityValue = Float(controller.ringLightIntensity)
+        cameraView.flashControlView.ringLightColorSelectionView.selectColor(controller.ringLightColor)
+
+        cameraView.cameraActionsView.flashActionView.toggleButton.isSelected = controller.flashState != .off
+        syncAdjustment(
+            cameraView.cameraActionsView.toneMapActionView,
+            control: cameraView.toneMapControlView,
+            amount: controller.toneMapAdjustmentAmount
+        )
+        syncAdjustment(
+            cameraView.cameraActionsView.portraitActionView,
+            control: cameraView.portraitControlView,
+            amount: controller.portraitAdjustmentBlur
+        )
+    }
+
     open func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {
         cameraView.flashControlView.isHidden = true
+    }
+
+    private func syncAdjustment(
+        _ action: CameraConfigurableActionView,
+        control: AdjustmentControlView,
+        amount: Double
+    ) {
+        action.toggleButton.isSelected = amount > 0
+        control.intensityValue = Float(amount)
+        if amount > 0, action.configurable {
+            action.expand()
+        } else {
+            action.collapse()
+            control.isHidden = true
+        }
     }
 
     open func cameraControllerRequestedSnapAttributionViewShow(_ controller: CameraController) {
@@ -674,11 +711,11 @@ extension CameraViewController {
 
 extension CameraViewController: FlashControlViewDelegate {
     public func flashControlView(_ view: FlashControlView, updatedRingLightValue value: Float) {
-        cameraView.ringLightView.ringLightGradient.updateIntensity(to: CGFloat(value), animated: true)
+        cameraController.setRingLightIntensity(CGFloat(value))
     }
 
     public func flashControlView(_ view: FlashControlView, selectedRingLightColor color: UIColor) {
-        cameraView.ringLightView.changeColor(to: color)
+        cameraController.setRingLightColor(color)
     }
 
     public func flashControlView(_ view: FlashControlView, updatedFlashMode flashMode: CameraController.FlashMode) {

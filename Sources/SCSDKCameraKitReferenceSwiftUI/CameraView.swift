@@ -424,6 +424,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
+        uiView.syncControlState(with: cameraController)
     }
 
     final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
@@ -443,12 +444,11 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         }
 
         func flashControlView(_ view: FlashControlView, selectedRingLightColor color: UIColor) {
-            state.ringLightColor = color
+            cameraController.setRingLightColor(color)
         }
 
         func flashControlView(_ view: FlashControlView, updatedRingLightValue value: Float) {
-            state.ringLightIntensity = CGFloat(value)
-            state.showingRingLight = value > 0
+            cameraController.setRingLightIntensity(CGFloat(value))
         }
 
         func flashControlView(_ view: FlashControlView, updatedFlashMode flashMode: CameraController.FlashMode) {
@@ -549,6 +549,38 @@ private final class InclusiveCameraControlsView: UIView {
 
         configureControlVisibilityCallbacks()
         updateFlashToggle(for: cameraController.cameraPosition)
+        syncControlState(with: cameraController)
+    }
+
+    func syncControlState(with cameraController: CameraController) {
+        flashControlView.ringLightIntensityValue = Float(cameraController.ringLightIntensity)
+        flashControlView.ringLightColorSelectionView.selectColor(cameraController.ringLightColor)
+        cameraActionsView.flashActionView.toggleButton.isSelected = cameraController.flashState != .off
+        syncAdjustment(
+            cameraActionsView.toneMapActionView,
+            control: toneMapControlView,
+            amount: cameraController.toneMapAdjustmentAmount
+        )
+        syncAdjustment(
+            cameraActionsView.portraitActionView,
+            control: portraitControlView,
+            amount: cameraController.portraitAdjustmentBlur
+        )
+    }
+
+    private func syncAdjustment(
+        _ action: CameraConfigurableActionView,
+        control: AdjustmentControlView,
+        amount: Double
+    ) {
+        action.toggleButton.isSelected = amount > 0
+        control.intensityValue = Float(amount)
+        if amount > 0, action.configurable {
+            action.expand()
+        } else {
+            action.collapse()
+            control.isHidden = true
+        }
     }
 
     func updateAdjustmentAvailability(tone: Bool, portrait: Bool) {

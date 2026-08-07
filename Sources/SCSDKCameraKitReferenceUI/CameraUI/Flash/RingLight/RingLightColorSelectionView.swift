@@ -16,7 +16,7 @@ public class RingLightColorSelectionView: UIView {
     public weak var delegate: RingLightColorSelectionViewDelegate?
 
     /// The set of colors to choose from.
-    private let colors: [UIColor] = [
+    public let colors: [UIColor] = [
         UIColor(hex: 0xFFFFFF),
         UIColor(hex: 0xFFECBB),
         UIColor(hex: 0xFFD166),
@@ -101,6 +101,20 @@ extension RingLightColorSelectionView {
         }
         collectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
         collectionView(collectionView, didSelectItemAt: indexPath)
+    }
+
+    /// Selects a ring-light color without reporting it as a new user selection.
+    public func selectColor(_ color: UIColor) {
+        guard let index = colors.firstIndex(where: { $0.isEqual(color) }) else { return }
+        let indexPath = IndexPath(row: index, section: 0)
+        if let selected = collectionView.indexPathsForSelectedItems {
+            for selectedPath in selected where selectedPath != indexPath {
+                collectionView.deselectItem(at: selectedPath, animated: false)
+                collectionView(collectionView, didDeselectItemAt: selectedPath)
+            }
+        }
+        collectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
+        (collectionView.cellForItem(at: indexPath) as? RingLightColorSelectionViewCell)?.highlight()
     }
 
     private func setupCollectionView() {
