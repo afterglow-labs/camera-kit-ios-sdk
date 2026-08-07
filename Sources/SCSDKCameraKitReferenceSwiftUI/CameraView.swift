@@ -179,11 +179,13 @@ private struct PreviewLayer: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let previewSize = fittedPreviewSize(in: proxy.size, aspectRatio: aspectRatio.widthToHeight)
             ZStack {
                 PreviewView(
                     cameraKit: cameraController.cameraKit,
                     bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset
                 )
+                    .frame(width: previewSize.width, height: previewSize.height)
                     .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                     .onTapGesture(count: 2, perform: cameraController.flipCamera)
                     .gesture(
@@ -203,6 +205,24 @@ private struct PreviewLayer: View {
             }
         }
         .background(Color.black)
+    }
+
+    private func fittedPreviewSize(in availableSize: CGSize, aspectRatio: CGFloat?) -> CGSize {
+        guard
+            let aspectRatio,
+            aspectRatio.isFinite,
+            aspectRatio > 0,
+            availableSize.width > 0,
+            availableSize.height > 0
+        else {
+            return availableSize
+        }
+
+        let availableRatio = availableSize.width / availableSize.height
+        if availableRatio > aspectRatio {
+            return CGSize(width: availableSize.height * aspectRatio, height: availableSize.height)
+        }
+        return CGSize(width: availableSize.width, height: availableSize.width / aspectRatio)
     }
 }
 

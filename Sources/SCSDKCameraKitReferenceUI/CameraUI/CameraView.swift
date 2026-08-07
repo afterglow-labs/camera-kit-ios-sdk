@@ -10,6 +10,17 @@ open class CameraView: UIView {
     /// default camerakit view to draw outputted textures
     public let previewView = PreviewView()
 
+    /// Width-to-height ratio for the rendered Camera Kit viewport. Nil fills the camera view.
+    public var previewAspectRatio: CGFloat? {
+        didSet {
+            if let previewAspectRatio, (!previewAspectRatio.isFinite || previewAspectRatio <= 0) {
+                self.previewAspectRatio = nil
+                return
+            }
+            setNeedsLayout()
+        }
+    }
+
     // MARK: View properties
 
     /// bottom bar below carousel
@@ -232,6 +243,7 @@ open class CameraView: UIView {
 
     override open func layoutSubviews() {
         super.layoutSubviews()
+        previewView.frame = resolvedPreviewFrame
         previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
@@ -268,14 +280,36 @@ extension CameraView {
     }
 
     private func setupPreview() {
+        backgroundColor = .black
         addSubview(previewView)
-        previewView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            previewView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            previewView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            previewView.topAnchor.constraint(equalTo: topAnchor),
-            previewView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        previewView.frame = bounds
+        previewView.contentMode = .aspectFill
+    }
+
+    private var resolvedPreviewFrame: CGRect {
+        guard
+            let previewAspectRatio,
+            previewAspectRatio.isFinite,
+            previewAspectRatio > 0,
+            bounds.width > 0,
+            bounds.height > 0
+        else {
+            return bounds
+        }
+
+        let availableRatio = bounds.width / bounds.height
+        let size: CGSize
+        if availableRatio > previewAspectRatio {
+            size = CGSize(width: bounds.height * previewAspectRatio, height: bounds.height)
+        } else {
+            size = CGSize(width: bounds.width, height: bounds.width / previewAspectRatio)
+        }
+        return CGRect(
+            x: bounds.midX - size.width / 2,
+            y: bounds.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        ).integral
     }
 }
 
