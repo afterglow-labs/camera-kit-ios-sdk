@@ -70,6 +70,14 @@ public extension CameraControllerUIDelegate {
     func cameraControllerControlsDidChange(_ controller: CameraController) {}
 }
 
+/// Selects the rear capture device used as Camera Kit's input.
+public enum BackCameraDeviceMode: String, CaseIterable, Sendable {
+    /// Uses Apple's virtual multi-camera device when available.
+    case automatic
+    /// Keeps the physical ultra-wide camera active so zoom remains digital on that lens.
+    case ultraWide
+}
+
 // MARK: Class Definition and State
 
 /// A controller which manages the camera and lenses stack on behalf of its owner
@@ -210,6 +218,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Width-to-height ratio used for captured photos and videos. Nil follows the screen ratio.
     public private(set) var captureAspectRatio: CGFloat?
+
+    /// Rear capture device selection. Automatic preserves Apple's normal lens switching behavior.
+    public private(set) var backCameraDeviceMode: BackCameraDeviceMode = .automatic
 
     // MARK: Initializers
 
@@ -878,6 +889,20 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
+    /// Selects the rear camera input. Ultra-wide falls back to automatic when unavailable.
+    public func setBackCameraDeviceMode(_ mode: BackCameraDeviceMode) {
+        guard backCameraDeviceMode != mode else { return }
+        backCameraDeviceMode = mode
+        guard cameraPosition == .back else {
+            notifyControlsDidChange()
+            return
+        }
+        captureSessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.replaceVideoInputIfNeeded(for: .back)
+        }
+    }
+
     // MARK: LensHintDelegate
 
     public func lensProcessor(
@@ -1115,6 +1140,10 @@ private extension CameraController {
 
     func preferredVideoDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
         if position == .back {
+            if backCameraDeviceMode == .ultraWide,
+               let ultraWide = AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back) {
+                return ultraWide
+            }
             for deviceType in [AVCaptureDevice.DeviceType.builtInTripleCamera, .builtInDualWideCamera] {
                 if let device = AVCaptureDevice.default(deviceType, for: .video, position: .back) {
                     return device

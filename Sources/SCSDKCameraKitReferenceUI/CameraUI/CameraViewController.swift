@@ -32,14 +32,12 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
     /// convenience prop to get current interface orientation of application/scene
     fileprivate var applicationInterfaceOrientation: UIInterfaceOrientation {
-        var interfaceOrientation = UIApplication.shared.statusBarOrientation
-        if
-            #available(iOS 13, *),
-            let sceneOrientation = UIApplication.shared.windows.first?.windowScene?.interfaceOrientation
-        {
-            interfaceOrientation = sceneOrientation
-        }
-        return interfaceOrientation
+        viewIfLoaded?.window?.windowScene?.interfaceOrientation
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first(where: { $0.activationState == .foregroundActive })?
+                .interfaceOrientation
+            ?? .portrait
     }
 
     /// convenience prop to get current interface orientation mask to lock device from rotation
@@ -766,7 +764,17 @@ extension CameraViewController {
         }
 
         public var viewControllerForPresentingAgreements: UIViewController {
-            cameraViewController ?? UIApplication.shared.keyWindow!.rootViewController!
+            if let cameraViewController {
+                return cameraViewController
+            }
+            if let rootViewController = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows)
+                .first(where: \.isKeyWindow)?
+                .rootViewController {
+                return rootViewController
+            }
+            return UIViewController()
         }
 
         public func dismissAgreementsViewController(_ viewController: UIViewController, accepted: Bool) {
