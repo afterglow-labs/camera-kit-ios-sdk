@@ -5,7 +5,7 @@ import UIKit
 
 /// Loading view footer for media picker view
 class MediaPickerViewLoadingFooter: UICollectionReusableView {
-    let loadingIndicator = UIActivityIndicatorView(style: .gray)
+    let loadingIndicator = UIActivityIndicatorView(style: .medium)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
