@@ -590,13 +590,6 @@ extension CameraViewController {
         cameraView.setVideoCaptureButtonRecording(true)
         print("Start recording")
         cameraController.startRecording()
-        cameraView.hideAllControls()
-        UIView.animate(
-            withDuration: 0.15,
-            animations: { [weak self] in
-                self?.cameraView.cameraActionsView.collapse()
-            }
-        )
         appOrientationDelegate?.lockOrientation(currentInterfaceOrientationMask)
         if #available(iOS 16.0, *) {
             UIView.performWithoutAnimation {
@@ -644,8 +637,6 @@ extension CameraViewController {
     private func restoreActiveCameraState() {
         recordingActive = false
         cameraView.setVideoCaptureButtonRecording(false)
-        cameraView.cameraActionsView.expand()
-        cameraView.carouselView.showCarousel()
         appOrientationDelegate?.unlockOrientation()
         if #available(iOS 16.0, *) {
             UIView.performWithoutAnimation {
