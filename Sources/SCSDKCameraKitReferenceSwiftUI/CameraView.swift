@@ -91,7 +91,7 @@ public struct CameraView: View {
                 )
                 .frame(width: 62)
                 .frame(maxHeight: .infinity)
-                .padding(.top, 128)
+                .padding(.top, LensUILayout.carouselTopInset)
                 .padding(.bottom, 132)
                 .padding(.trailing, 10)
             }
@@ -180,6 +180,7 @@ private struct PreviewLayer: View {
 
 private enum LensUILayout {
     static let bottomSafeAreaInset: CGFloat = 180
+    static let carouselTopInset: CGFloat = 260
 }
 
 @available(iOS 14.0, *)
