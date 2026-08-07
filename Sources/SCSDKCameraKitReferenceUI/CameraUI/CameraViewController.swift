@@ -58,6 +58,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     public let cameraView = CameraView()
 
     private var recordingActive = false
+    private var recordingFinalizing = false
 
     override open func loadView() {
         view = cameraView
@@ -570,6 +571,7 @@ extension CameraViewController {
 
     @objc
     private func videoCaptureButtonPressed(_ sender: UIButton) {
+        guard !recordingFinalizing else { return }
         if recordingActive {
             finishVideoRecording()
         } else {
@@ -597,7 +599,7 @@ extension CameraViewController {
     }
 
     private func startVideoRecording() {
-        guard !recordingActive else { return }
+        guard !recordingActive, !recordingFinalizing else { return }
         recordingActive = true
         cameraView.setVideoCaptureButtonRecording(true)
         print("Start recording")
@@ -621,11 +623,13 @@ extension CameraViewController {
 
     private func finishVideoRecording() {
         guard recordingActive else { return }
+        recordingActive = false
+        recordingFinalizing = true
+        cameraView.setVideoCaptureButtonRecording(false)
         print("Finish recording")
         cameraController.finishRecording { url, error in
             DispatchQueue.main.async {
-                self.recordingActive = false
-                self.cameraView.setVideoCaptureButtonRecording(false)
+                self.recordingFinalizing = false
                 guard let url else {
                     self.restoreActiveCameraState()
                     return
@@ -655,6 +659,7 @@ extension CameraViewController {
 
     private func restoreActiveCameraState() {
         recordingActive = false
+        recordingFinalizing = false
         cameraView.setVideoCaptureButtonRecording(false)
         appOrientationDelegate?.unlockOrientation()
         if #available(iOS 16.0, *) {

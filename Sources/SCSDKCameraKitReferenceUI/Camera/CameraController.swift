@@ -76,9 +76,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public let captureSession: AVCaptureSession
 
     private let captureSessionQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.capture-session")
+    private let prefetchResourceQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.prefetch-resources")
     private var configuredOrientation: AVCaptureVideoOrientation = .portrait
     private var configuredTextInputContextProvider: TextInputContextProvider?
     private var configuredAgreementsPresentationContextProvider: AgreementsPresentationContextProvider?
+    private var activePrefetchGroupIDs: Set<String> = []
+    private var prefetchTasksByGroupID: [String: LensPrefetcherTask] = [:]
+    private var prefetchedLensesByGroupID: [String: [Lens]] = [:]
 
     /// The CameraKit session
     public let cameraKit: CameraKitProtocol
@@ -124,6 +128,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         didSet {
             let removedIDs = Set(oldValue).subtracting(groupIDs)
             let addedIDs = Set(groupIDs).subtracting(oldValue)
+            let activeIDs = Set(groupIDs)
+            prefetchResourceQueue.async { [weak self] in
+                guard let self else { return }
+                self.activePrefetchGroupIDs = activeIDs
+                for groupID in removedIDs {
+                    self.releasePrefetchResources(forGroupID: groupID)
+                }
+            }
             for group in removedIDs {
                 cameraKit.lenses.repository.removeObserver(self, groupID: group)
             }
@@ -231,10 +243,30 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Call this before replacing one reference camera implementation with another so that only one
     /// CameraKit/capture pipeline owns the camera at a time.
     public func stop(completion: (() -> Void)? = nil) {
+        NotificationCenter.default.removeObserver(self)
+        isAdjustingExposureObservation = nil
+        isAdjustingFocusObservation = nil
+        groupIDs = []
+        stopPendingLensOperations()
+
         captureSessionQueue.async { [self] in
             stopWebSocketStreaming()
+            prefetchResourceQueue.sync {
+                releaseAllPrefetchResources()
+            }
+            if let recorder {
+                recorder.finishRecording(completion: nil)
+                cameraKit.remove(output: recorder.output)
+                self.recorder = nil
+            }
+            if let photoCaptureOutput {
+                cameraKit.remove(output: photoCaptureOutput)
+                self.photoCaptureOutput = nil
+            }
             cameraKit.activeInput.stopRunning()
             cameraKit.stop {
+                self.currentLens = nil
+                self.uiDelegate = nil
                 DispatchQueue.main.async {
                     completion?()
                 }
@@ -492,10 +524,17 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     open func repository(_ repository: LensRepository, didUpdateLenses lenses: [Lens], forGroupID groupID: String) {
         // prefetch lens content (don't prefetch bundled since content is local already)
         if !groupID.contains(SCCameraKitLensRepositoryBundledGroup) {
-            // the object returned here can be used to cancel the ongoing prefetch operation if need be
-            _ = cameraKit.lenses.prefetcher.prefetch(lenses: lenses, completion: nil)
-            for lens in lenses {
-                cameraKit.lenses.prefetcher.addStatusObserver(self, lens: lens)
+            prefetchResourceQueue.async { [weak self] in
+                guard let self, self.activePrefetchGroupIDs.contains(groupID) else { return }
+                self.releasePrefetchResources(forGroupID: groupID)
+                self.prefetchTasksByGroupID[groupID] = self.cameraKit.lenses.prefetcher.prefetch(
+                    lenses: lenses,
+                    completion: nil
+                )
+                self.prefetchedLensesByGroupID[groupID] = lenses
+                for lens in lenses {
+                    self.cameraKit.lenses.prefetcher.addStatusObserver(self, lens: lens)
+                }
             }
         }
 
@@ -538,6 +577,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Configures the recorder to be ready to record a new video.
     open func configureRecorder() {
         if let old = recorder {
+            old.finishRecording(completion: nil)
             cameraKit.remove(output: old.output)
         }
         recorder = try? Recorder(
@@ -583,27 +623,29 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Finish recording the video.
     /// - Parameter completion: completion to be called with a URL to the recorded video or an error.
     open func finishRecording(completion: ((URL?, Error?) -> Void)?) {
-        guard let recorder else { return }
-        recorder.finishRecording { [weak self] url, error in
-            guard let device = self?.cameraInputDevice else {
-                DispatchQueue.main.async {
-                    completion?(url, error)
-                }
-                return
+        guard let recorder else {
+            DispatchQueue.main.async {
+                completion?(nil, nil)
             }
-
+            return
+        }
+        self.recorder = nil
+        recorder.finishRecording { url, error in
+            DispatchQueue.main.async {
+                completion?(url, error)
+            }
+        }
+        cameraKit.remove(output: recorder.output)
+        captureSessionQueue.async { [weak self] in
+            guard let device = self?.cameraInputDevice else { return }
             do {
                 try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
                 if device.isTorchModeSupported(.off) {
                     device.torchMode = .off
                 }
-                device.unlockForConfiguration()
             } catch {
                 print("[CameraKit] Failed to lock device for configuration when trying to disable camera torch")
-            }
-
-            DispatchQueue.main.async {
-                completion?(url, error)
             }
         }
         uiDelegate?.cameraControllerRequestedSnapAttributionViewShow(self)
@@ -648,29 +690,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ///   - lens: selected lens
     ///   - completion: callback on completion with success/failure
     public func applyLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
-        lensQueue.async { [weak self] in
-            // set current lens right away so we don't apply same lens twice
-            self?.currentLens = lens
-            guard let self, let processor = self.cameraKit.lenses.processor else {
-                completion?(false)
-                return
-            }
-            processor.apply(lens: lens, launchData: self.launchData(for: lens)) { [weak self] success in
-                if success {
-                    print("\(lens.name ?? "Unnamed") (\(lens.id)) Applied")
-
-                    DispatchQueue.main.async { [weak self] in
-                        // set camera position based on facing preference
-                        self?.changeCameraPosition(with: lens.facingPreference)
-                    }
-
-                } else {
-                    self?.currentLens = nil
-                    print("Lens failed to apply")
-                }
-                completion?(success)
-            }
-        }
+        enqueueLensOperation(.apply(lens, completion))
     }
     
     public func warmupLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
@@ -694,15 +714,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ///   - willReapply: if true, cameraKit will not clear out the "currentLens" property, and reapplyCurrentLens will apply the lens that was cleared.
     ///   - completion: callback on completion with success/failure
     public func clearLens(willReapply: Bool = false, completion: ((Bool) -> Void)? = nil) {
-        lensQueue.async {
-            self.cameraKit.lenses.processor?.clear { completed in
-                if !willReapply, completed {
-                    self.currentLens = nil
-                }
-
-                completion?(completed)
-            }
-        }
+        enqueueLensOperation(.clear(willReapply: willReapply, completion: completion))
     }
 
     /// If a lens has already been applied, reapply it.
@@ -855,6 +867,22 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// serial queue used to apply/clear lenses
     fileprivate let lensQueue = DispatchQueue(label: "com.snap.camerakit.sample.lensqueue", qos: .userInitiated)
 
+    private enum PendingLensOperation {
+        case apply(Lens, ((Bool) -> Void)?)
+        case clear(willReapply: Bool, completion: ((Bool) -> Void)?)
+
+        func complete(_ success: Bool) {
+            switch self {
+            case let .apply(_, completion), let .clear(_, completion):
+                completion?(success)
+            }
+        }
+    }
+
+    private var pendingLensOperation: PendingLensOperation?
+    private var lensOperationInFlight = false
+    private var lensOperationsStopped = false
+
     /// The current camera input device
     fileprivate var cameraInputDevice: AVCaptureDevice? {
         captureSession.inputs
@@ -865,6 +893,110 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     fileprivate var isAdjustingExposureObservation: NSKeyValueObservation?
 
     fileprivate var isAdjustingFocusObservation: NSKeyValueObservation?
+
+    private func enqueueLensOperation(_ operation: PendingLensOperation) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                operation.complete(false)
+                return
+            }
+
+            self.pendingLensOperation?.complete(false)
+            self.pendingLensOperation = operation
+            if case let .apply(lens, _) = operation {
+                // Reflect the newest carousel selection while an earlier apply finishes.
+                self.currentLens = lens
+            }
+            self.startNextLensOperationIfNeeded()
+        }
+    }
+
+    private func startNextLensOperationIfNeeded() {
+        guard !lensOperationsStopped, !lensOperationInFlight, let operation = pendingLensOperation else { return }
+        pendingLensOperation = nil
+        lensOperationInFlight = true
+
+        guard let processor = cameraKit.lenses.processor else {
+            finishLensOperation(operation, success: false)
+            return
+        }
+
+        switch operation {
+        case let .apply(lens, _):
+            processor.apply(lens: lens, launchData: launchData(for: lens)) { [weak self] success in
+                guard let self else {
+                    operation.complete(false)
+                    return
+                }
+                self.lensQueue.async {
+                    if success {
+                        print("\(lens.name ?? "Unnamed") (\(lens.id)) Applied")
+                        if self.currentLens?.id == lens.id, self.currentLens?.groupId == lens.groupId {
+                            DispatchQueue.main.async { [weak self] in
+                                self?.changeCameraPosition(with: lens.facingPreference)
+                            }
+                        }
+                    } else {
+                        if self.currentLens?.id == lens.id, self.currentLens?.groupId == lens.groupId {
+                            self.currentLens = nil
+                        }
+                        print("Lens failed to apply")
+                    }
+                    self.finishLensOperation(operation, success: success)
+                }
+            }
+        case let .clear(willReapply, _):
+            processor.clear { [weak self] completed in
+                guard let self else {
+                    operation.complete(false)
+                    return
+                }
+                self.lensQueue.async {
+                    let hasNewerApply: Bool
+                    if case .apply = self.pendingLensOperation {
+                        hasNewerApply = true
+                    } else {
+                        hasNewerApply = false
+                    }
+                    if !willReapply, completed, !hasNewerApply {
+                        self.currentLens = nil
+                    }
+                    self.finishLensOperation(operation, success: completed)
+                }
+            }
+        }
+    }
+
+    private func finishLensOperation(_ operation: PendingLensOperation, success: Bool) {
+        lensOperationInFlight = false
+        operation.complete(success)
+        startNextLensOperationIfNeeded()
+    }
+
+    private func stopPendingLensOperations() {
+        lensQueue.async { [weak self] in
+            guard let self else { return }
+            self.lensOperationsStopped = true
+            self.pendingLensOperation?.complete(false)
+            self.pendingLensOperation = nil
+        }
+    }
+
+    private func releasePrefetchResources(forGroupID groupID: String) {
+        prefetchTasksByGroupID.removeValue(forKey: groupID)?.cancel()
+        let lenses = prefetchedLensesByGroupID.removeValue(forKey: groupID) ?? []
+        for lens in lenses {
+            cameraKit.lenses.prefetcher.removeStatusObserver(self, lens: lens)
+        }
+    }
+
+    private func releaseAllPrefetchResources() {
+        let groupIDs = Set(prefetchTasksByGroupID.keys).union(prefetchedLensesByGroupID.keys)
+        for groupID in groupIDs {
+            releasePrefetchResources(forGroupID: groupID)
+        }
+        activePrefetchGroupIDs.removeAll()
+    }
 }
 
 // MARK: Camera Pipeline Configuration

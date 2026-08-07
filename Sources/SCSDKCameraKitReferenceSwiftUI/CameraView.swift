@@ -733,7 +733,11 @@ struct LensFooter: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(state.recording ? "Stop recording" : "Start recording")
+                .disabled(state.recordingFinalizing)
+                .opacity(state.recordingFinalizing ? 0.5 : 1)
+                .accessibilityLabel(
+                    state.recordingFinalizing ? "Finishing recording" : (state.recording ? "Stop recording" : "Start recording")
+                )
             }
             .frame(height: 42)
 
@@ -761,17 +765,22 @@ struct LensFooter: View {
 
     private func toggleRecording() {
         if state.recording {
+            state.recording = false
+            state.recordingFinalizing = true
             cameraController.finishRecording { url, _ in
-                state.recording = false
-                guard let url else { return }
-                if let onVideoRecorded {
-                    onVideoRecorded(url)
-                } else {
-                    state.captured = .video(url: url)
-                    cameraController.clearLens(willReapply: true)
+                DispatchQueue.main.async {
+                    state.recordingFinalizing = false
+                    guard let url else { return }
+                    if let onVideoRecorded {
+                        onVideoRecorded(url)
+                    } else {
+                        state.captured = .video(url: url)
+                        cameraController.clearLens(willReapply: true)
+                    }
                 }
             }
         } else {
+            guard !state.recordingFinalizing else { return }
             state.recording = true
             cameraController.startRecording()
         }

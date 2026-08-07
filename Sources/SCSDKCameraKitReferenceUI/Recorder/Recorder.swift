@@ -6,6 +6,13 @@ import UIKit
 
 /// Sample video recorder implementation.
 public class Recorder {
+    private enum State {
+        case ready
+        case recording
+        case finishing
+        case finished(URL?, Error?)
+    }
+
     /// The URL to write the video to.
     private let outputURL: URL
 
@@ -20,6 +27,10 @@ public class Recorder {
     private let writer: AVAssetWriter
     private let videoInput: AVAssetWriterInput
     private let pixelBufferInput: AVAssetWriterInputPixelBufferAdaptor
+    private let stateLock = NSLock()
+    private let finalizationQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.recorder-finalization")
+    private var state: State = .ready
+    private var finishCompletions: [((URL?, Error?) -> Void)] = []
     private let audioInput: AVAssetWriterInput = {
         let compressionAudioSettings: [String: Any] =
             [
@@ -72,16 +83,67 @@ public class Recorder {
     }
 
     public func startRecording() {
-        writer.startWriting()
+        stateLock.lock()
+        guard case .ready = state else {
+            stateLock.unlock()
+            return
+        }
+
+        guard writer.startWriting() else {
+            let error = writer.error
+            state = .finished(nil, error)
+            stateLock.unlock()
+            return
+        }
+        state = .recording
+        stateLock.unlock()
         output.startRecording()
     }
 
     public func finishRecording(completion: ((URL?, Error?) -> Void)?) {
+        stateLock.lock()
+        switch state {
+        case .ready:
+            let error = writer.error
+            state = .finished(nil, error)
+            stateLock.unlock()
+            completion?(nil, error)
+            return
+        case .recording:
+            if let completion {
+                finishCompletions.append(completion)
+            }
+            state = .finishing
+            stateLock.unlock()
+        case .finishing:
+            if let completion {
+                finishCompletions.append(completion)
+            }
+            stateLock.unlock()
+            return
+        case let .finished(url, error):
+            stateLock.unlock()
+            completion?(url, error)
+            return
+        }
+
+        // Stop accepting Camera Kit frames immediately, then let AVAssetWriter flush away from the UI thread.
         output.stopRecording()
-        videoInput.markAsFinished()
-        audioInput.markAsFinished()
-        writer.finishWriting { [weak self] in
-            completion?(self?.outputURL, nil)
+        finalizationQueue.async { [self] in
+            videoInput.markAsFinished()
+            audioInput.markAsFinished()
+            writer.finishWriting { [self] in
+                let error = writer.error
+                let url = writer.status == .completed ? outputURL : nil
+
+                stateLock.lock()
+                state = .finished(url, error)
+                let completions = finishCompletions
+                finishCompletions.removeAll()
+                stateLock.unlock()
+
+                completions.forEach { $0(url, error) }
+            }
         }
     }
 

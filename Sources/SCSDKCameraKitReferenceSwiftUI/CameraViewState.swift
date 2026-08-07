@@ -76,6 +76,9 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Whether video recording is currently active.
     @Published var recording = false
 
+    /// Whether a completed recording is still being flushed to disk.
+    @Published var recordingFinalizing = false
+
     deinit {
         tearDown()
     }
@@ -84,6 +87,8 @@ public class CameraViewState: NSObject, ObservableObject {
         hideMessage?.cancel()
         hideMessage = nil
         cancelleables.removeAll()
+        recording = false
+        recordingFinalizing = false
 
         if let controller = configuredCameraController {
             controller.cameraKit.adjustments.processor?.removeObserver(self)
