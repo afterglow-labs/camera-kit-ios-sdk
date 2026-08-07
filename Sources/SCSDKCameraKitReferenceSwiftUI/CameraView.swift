@@ -40,6 +40,9 @@ public struct CameraView: View {
     private let onChromeHiddenChange: ((Bool) -> Void)?
     private let previewAspectRatio: CameraPreviewAspectRatio
     private let previewMirrored: Bool
+    private let showsCaptureChrome: Bool
+    private let showsLensCarousel: Bool
+    private let showsCameraKitControls: Bool
     private let showsChromeVisibilityButton: Bool
 
     public init(
@@ -47,6 +50,9 @@ public struct CameraView: View {
         previewAspectRatio: CameraPreviewAspectRatio = .fullScreen,
         previewMirrored: Bool = false,
         chromeHidden: Binding<Bool> = .constant(false),
+        showsCaptureChrome: Bool = true,
+        showsLensCarousel: Bool = true,
+        showsCameraKitControls: Bool = true,
         showsChromeVisibilityButton: Bool = true,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
@@ -54,12 +60,17 @@ public struct CameraView: View {
         self.previewAspectRatio = previewAspectRatio
         self.previewMirrored = previewMirrored
         self._chromeHidden = chromeHidden
+        self.showsCaptureChrome = showsCaptureChrome
+        self.showsLensCarousel = showsLensCarousel
+        self.showsCameraKitControls = showsCameraKitControls
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
         self.onChromeHiddenChange = onChromeHiddenChange
     }
 
     public var body: some View {
-        let chromeOpacity = state.chromeHidden ? 0.0 : 1.0
+        let captureChromeVisible = showsCaptureChrome && !state.chromeHidden
+        let lensCarouselVisible = showsLensCarousel && !state.chromeHidden
+        let cameraKitControlsVisible = showsCameraKitControls && !state.chromeHidden
 
         ZStack {
             PreviewLayer(
@@ -79,8 +90,8 @@ public struct CameraView: View {
                 MediaPickerView(provider: cameraController.lensMediaProvider)
                 LensFooter(state: state, cameraController: cameraController)
             }
-            .opacity(chromeOpacity)
-            .allowsHitTesting(!state.chromeHidden)
+            .opacity(captureChromeVisible ? 1 : 0)
+            .allowsHitTesting(captureChromeVisible)
             HStack {
                 Spacer(minLength: 0)
 
@@ -95,20 +106,20 @@ public struct CameraView: View {
                 .padding(.bottom, 132)
                 .padding(.trailing, 10)
             }
-            .opacity(chromeOpacity)
-            .allowsHitTesting(!state.chromeHidden)
+            .opacity(lensCarouselVisible ? 1 : 0)
+            .allowsHitTesting(lensCarouselVisible)
             SnapAttributionContainerRepresentable()
                 .edgesIgnoringSafeArea(.all)
-                .opacity(state.showingSnapAttribution && !state.chromeHidden ? 1 : 0)
+                .opacity(state.showingSnapAttribution && captureChromeVisible ? 1 : 0)
                 .allowsHitTesting(false)
             CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
                 .edgesIgnoringSafeArea(.all)
-                .opacity(chromeOpacity)
-                .allowsHitTesting(!state.chromeHidden)
+                .opacity(cameraKitControlsVisible ? 1 : 0)
+                .allowsHitTesting(cameraKitControlsVisible)
             HintView(hint: state.hint)
-                .opacity(chromeOpacity)
+                .opacity(captureChromeVisible ? 1 : 0)
             ProgressView()
-                .opacity(state.loading && !state.chromeHidden ? 1 : 0)
+                .opacity(state.loading && captureChromeVisible ? 1 : 0)
             if showsChromeVisibilityButton {
                 ChromeVisibilityButton(hidden: $state.chromeHidden)
             }
