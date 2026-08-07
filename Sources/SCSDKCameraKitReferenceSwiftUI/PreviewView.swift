@@ -32,8 +32,24 @@ public struct PreviewView: UIViewRepresentable {
         return inner
     }
 
+    public func makeCoordinator() -> Coordinator {
+        Coordinator(cameraKit: cameraKit)
+    }
+
     public func updateUIView(_ uiView: SafeAreaPreviewView, context: Context) {
         uiView.bottomSafeAreaInset = bottomSafeAreaInset
+    }
+
+    public static func dismantleUIView(_ uiView: SafeAreaPreviewView, coordinator: Coordinator) {
+        coordinator.cameraKit.remove(output: uiView)
+    }
+
+    public final class Coordinator {
+        fileprivate let cameraKit: CameraKitProtocol
+
+        fileprivate init(cameraKit: CameraKitProtocol) {
+            self.cameraKit = cameraKit
+        }
     }
 }
 

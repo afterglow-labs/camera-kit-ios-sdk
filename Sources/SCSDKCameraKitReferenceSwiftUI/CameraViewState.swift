@@ -76,6 +76,26 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Whether video recording is currently active.
     @Published var recording = false
 
+    deinit {
+        tearDown()
+    }
+
+    func tearDown() {
+        hideMessage?.cancel()
+        hideMessage = nil
+        cancelleables.removeAll()
+
+        if let controller = configuredCameraController {
+            controller.cameraKit.adjustments.processor?.removeObserver(self)
+            if controller.uiDelegate === self {
+                controller.uiDelegate = nil
+            }
+        }
+
+        configuredCameraController = nil
+        cameraController = nil
+    }
+
     func configureIfNeeded(
         cameraController controller: CameraController,
         onChromeHiddenChange: ((Bool) -> Void)?

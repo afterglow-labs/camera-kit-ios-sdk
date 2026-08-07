@@ -117,6 +117,15 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        cameraController.cameraKit.adjustments.processor?.removeObserver(self)
+        cameraController.cameraKit.remove(output: cameraView.previewView)
+        if cameraController.uiDelegate === self {
+            cameraController.uiDelegate = nil
+        }
+    }
+
     // MARK: Overridable Helper
 
     /// get message to display in popup view for selected lens

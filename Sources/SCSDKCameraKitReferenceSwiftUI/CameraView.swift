@@ -80,46 +80,55 @@ public struct CameraView: View {
                 mirrored: previewMirrored
             )
             .edgesIgnoringSafeArea(.all)
-            VStack {
-                LensHeader(lensName: cameraController.currentLens?.name ?? "")
-                MessageView(
-                    lensName: cameraController.currentLens?.name ?? "", lensID: cameraController.currentLens?.id ?? "",
-                    showing: state.showingMessage
-                )
-                Spacer()
-                MediaPickerView(provider: cameraController.lensMediaProvider)
-                LensFooter(state: state, cameraController: cameraController)
+            if captureChromeVisible {
+                VStack {
+                    LensHeader(lensName: cameraController.currentLens?.name ?? "")
+                    MessageView(
+                        lensName: cameraController.currentLens?.name ?? "", lensID: cameraController.currentLens?.id ?? "",
+                        showing: state.showingMessage
+                    )
+                    Spacer()
+                    MediaPickerView(provider: cameraController.lensMediaProvider)
+                    LensFooter(state: state, cameraController: cameraController)
+                }
+                .transition(.opacity)
             }
-            .opacity(captureChromeVisible ? 1 : 0)
-            .allowsHitTesting(captureChromeVisible)
-            HStack {
-                Spacer(minLength: 0)
+            if lensCarouselVisible {
+                HStack {
+                    Spacer(minLength: 0)
 
-                CarouselView(
-                    availableLenses: $state.lenses,
-                    selectedLens: $state.selectedLens,
-                    orientation: .vertical
-                )
-                .frame(width: 62)
-                .frame(maxHeight: .infinity)
-                .padding(.top, LensUILayout.carouselTopInset)
-                .padding(.bottom, 132)
-                .padding(.trailing, 10)
+                    CarouselView(
+                        availableLenses: $state.lenses,
+                        selectedLens: $state.selectedLens,
+                        orientation: .vertical
+                    )
+                    .frame(width: 62)
+                    .frame(maxHeight: .infinity)
+                    .padding(.top, LensUILayout.carouselTopInset)
+                    .padding(.bottom, 132)
+                    .padding(.trailing, 10)
+                }
+                .transition(.opacity)
             }
-            .opacity(lensCarouselVisible ? 1 : 0)
-            .allowsHitTesting(lensCarouselVisible)
-            SnapAttributionContainerRepresentable()
-                .edgesIgnoringSafeArea(.all)
-                .opacity(state.showingSnapAttribution && captureChromeVisible ? 1 : 0)
-                .allowsHitTesting(false)
-            CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
-                .edgesIgnoringSafeArea(.all)
-                .opacity(cameraKitControlsVisible ? 1 : 0)
-                .allowsHitTesting(cameraKitControlsVisible)
-            HintView(hint: state.hint)
-                .opacity(captureChromeVisible ? 1 : 0)
-            ProgressView()
-                .opacity(state.loading && captureChromeVisible ? 1 : 0)
+            if state.showingSnapAttribution && captureChromeVisible {
+                SnapAttributionContainerRepresentable()
+                    .edgesIgnoringSafeArea(.all)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            if cameraKitControlsVisible {
+                CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+            }
+            if captureChromeVisible {
+                HintView(hint: state.hint)
+                    .transition(.opacity)
+            }
+            if state.loading && captureChromeVisible {
+                ProgressView()
+                    .transition(.opacity)
+            }
             if showsChromeVisibilityButton {
                 ChromeVisibilityButton(hidden: $state.chromeHidden)
             }
@@ -140,6 +149,7 @@ public struct CameraView: View {
             }
             onChromeHiddenChange?(hidden)
         }
+        .onDisappear(perform: state.tearDown)
         .sheet(item: $state.captured, onDismiss: cameraController.reapplyCurrentLens) { item in
             switch item {
             case let .photo(image):
