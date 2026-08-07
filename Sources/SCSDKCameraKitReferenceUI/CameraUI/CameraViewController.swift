@@ -24,6 +24,9 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
     /// App orientation delegate to control app orientation
     public weak var appOrientationDelegate: AppOrientationDelegate?
+
+    /// Receives completed recordings instead of presenting the reference video preview.
+    public var onVideoRecorded: ((URL) -> Void)?
     
     private var lastUsedOrientation = UIInterfaceOrientation.portrait
 
@@ -627,6 +630,13 @@ extension CameraViewController {
                     self.restoreActiveCameraState()
                     return
                 }
+
+                if let onVideoRecorded = self.onVideoRecorded {
+                    self.restoreActiveCameraState()
+                    onVideoRecorded(url)
+                    return
+                }
+
                 self.cameraController.clearLens(willReapply: true)
                 self.cameraController.restoreBrightnessIfNecessary()
                 let player = VideoPreviewViewController(videoUrl: url)

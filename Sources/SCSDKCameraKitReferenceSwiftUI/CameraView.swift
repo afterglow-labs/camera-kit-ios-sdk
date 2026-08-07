@@ -44,6 +44,7 @@ public struct CameraView: View {
     private let showsLensCarousel: Bool
     private let showsCameraKitControls: Bool
     private let showsChromeVisibilityButton: Bool
+    private let onVideoRecorded: ((URL) -> Void)?
 
     public init(
         cameraController: CameraController,
@@ -54,6 +55,7 @@ public struct CameraView: View {
         showsLensCarousel: Bool = true,
         showsCameraKitControls: Bool = true,
         showsChromeVisibilityButton: Bool = true,
+        onVideoRecorded: ((URL) -> Void)? = nil,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
         self.cameraController = cameraController
@@ -64,6 +66,7 @@ public struct CameraView: View {
         self.showsLensCarousel = showsLensCarousel
         self.showsCameraKitControls = showsCameraKitControls
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
+        self.onVideoRecorded = onVideoRecorded
         self.onChromeHiddenChange = onChromeHiddenChange
     }
 
@@ -89,7 +92,11 @@ public struct CameraView: View {
                     )
                     Spacer()
                     MediaPickerView(provider: cameraController.lensMediaProvider)
-                    LensFooter(state: state, cameraController: cameraController)
+                    LensFooter(
+                        state: state,
+                        cameraController: cameraController,
+                        onVideoRecorded: onVideoRecorded
+                    )
                 }
                 .transition(.opacity)
             }
@@ -693,6 +700,9 @@ struct LensFooter: View {
     /// The camera controller.
     let cameraController: CameraController
 
+    /// Receives completed recordings instead of opening the reference video preview.
+    let onVideoRecorded: ((URL) -> Void)?
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 18) {
@@ -754,8 +764,12 @@ struct LensFooter: View {
             cameraController.finishRecording { url, _ in
                 state.recording = false
                 guard let url else { return }
-                state.captured = .video(url: url)
-                cameraController.clearLens(willReapply: true)
+                if let onVideoRecorded {
+                    onVideoRecorded(url)
+                } else {
+                    state.captured = .video(url: url)
+                    cameraController.clearLens(willReapply: true)
+                }
             }
         } else {
             state.recording = true
