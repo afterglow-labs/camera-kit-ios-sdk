@@ -88,9 +88,10 @@ public struct CameraView: View {
             .edgesIgnoringSafeArea(.all)
             if captureChromeVisible {
                 VStack {
-                    LensHeader(lensName: cameraController.currentLens?.name ?? "")
+                    LensHeader(lensName: state.selectedLens?.name ?? state.selectedLens?.id ?? "")
                     MessageView(
-                        lensName: cameraController.currentLens?.name ?? "", lensID: cameraController.currentLens?.id ?? "",
+                        lensName: state.selectedLens?.name ?? "",
+                        lensID: state.selectedLens?.id ?? "",
                         showing: state.showingMessage
                     )
                     Spacer()

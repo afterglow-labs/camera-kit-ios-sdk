@@ -41,7 +41,7 @@ public final class LocalLensBundle {
                 }
                 continue
             }
-            guard asset.assetType == 7, asset.assetTiming == 6 else {
+            guard [3, 7].contains(asset.assetType), [3, 4, 6].contains(asset.assetTiming) else {
                 throw LocalLensBundleError.invalidAssetMetadata(
                     id: asset.id,
                     assetType: asset.assetType,
@@ -50,7 +50,12 @@ public final class LocalLensBundle {
             }
 
             let fileURL = try Self.resolveFile(asset.file, beneath: root)
-            try Self.validatePackage(at: fileURL, relativePath: asset.file, expectedSHA256: asset.sha256)
+            try Self.validatePackage(
+                at: fileURL,
+                relativePath: asset.file,
+                expectedSHA256: asset.sha256,
+                allowingZIP: true
+            )
             assetsByID[asset.id] = asset
             validatedAssets[asset.id] = ValidatedAsset(manifest: asset, fileURL: fileURL)
         }
@@ -97,7 +102,7 @@ public final class LocalLensBundle {
 
         let runtimeAssets = validatedAssets.mapValues { asset in
             SCCameraKitLocalLensRuntimeAssetDescriptor(
-                identifier: asset.manifest.id,
+                identifier: asset.manifest.runtimeID ?? asset.manifest.id,
                 assetType: asset.manifest.assetType,
                 assetTiming: asset.manifest.assetTiming,
                 contentURL: asset.manifest.contentURL,
@@ -177,7 +182,8 @@ public final class LocalLensBundle {
     private static func validatePackage(
         at fileURL: URL,
         relativePath: String,
-        expectedSHA256: String
+        expectedSHA256: String,
+        allowingZIP: Bool = false
     ) throws {
         try requireRegularFile(fileURL, relativePath: relativePath)
         let normalizedHash = try normalizeSHA256(expectedSHA256)
@@ -193,7 +199,14 @@ public final class LocalLensBundle {
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { handle.closeFile() }
         let header = handle.readData(ofLength: 8)
-        guard header.count == 8, Array(header.prefix(4)) == [0x4C, 0x5A, 0x43, 0x00] else {
+        let signature = Array(header.prefix(4))
+        let isZIP = signature == [0x50, 0x4B, 0x03, 0x04]
+            || signature == [0x50, 0x4B, 0x05, 0x06]
+            || signature == [0x50, 0x4B, 0x07, 0x08]
+        if allowingZIP, header.count == 8, isZIP {
+            return
+        }
+        guard header.count == 8, signature == [0x4C, 0x5A, 0x43, 0x00] else {
             throw LocalLensBundleError.invalidLZCHeader(relativePath)
         }
         let version = header.dropFirst(4).prefix(4).enumerated().reduce(UInt32(0)) { value, byte in

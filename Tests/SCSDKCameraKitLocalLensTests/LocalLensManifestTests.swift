@@ -227,6 +227,82 @@ final class LocalLensManifestTests: XCTestCase {
         XCTAssertEqual(bundle.validatedAssetCount, 1)
     }
 
+    func testBuildsPerLensAssetVariantsWithSharedRuntimeIdentifier() throws {
+        let manifestURL = try makeValidFixture { manifest in
+            var assets = manifest["assets"] as! [[String: Any]]
+            assets[0]["id"] = "asset-shared-on-demand"
+            assets[0]["runtimeID"] = "asset-shared"
+            assets[0]["assetTiming"] = 3
+            var requiredAsset = assets[0]
+            requiredAsset["id"] = "asset-shared-required"
+            requiredAsset["assetTiming"] = 6
+            assets.append(requiredAsset)
+            manifest["assets"] = assets
+
+            var lenses = manifest["lenses"] as! [[String: Any]]
+            lenses[0]["assetIDs"] = ["asset-shared-on-demand"]
+            lenses[1]["assetIDs"] = ["asset-shared-required"]
+            manifest["lenses"] = lenses
+        }
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot
+        )
+        let runtime = try XCTUnwrap(
+            bundle.initializationExtension as? SCCameraKitLocalLensRuntimeExtension
+        )
+        let runtimeLenses = try XCTUnwrap(runtime.value(forKey: "lenses") as? [NSObject])
+        let runtimeAssetsByLensID = Dictionary(
+            uniqueKeysWithValues: try runtimeLenses.map { lens in
+                let lensID = try XCTUnwrap(lens.value(forKey: "identifier") as? String)
+                let assets = try XCTUnwrap(lens.value(forKey: "assets") as? [NSObject])
+                return (lensID, try XCTUnwrap(assets.first))
+            }
+        )
+
+        XCTAssertEqual(runtimeAssetsByLensID["lens-one"]?.value(forKey: "identifier") as? String, "asset-shared")
+        XCTAssertEqual(runtimeAssetsByLensID["lens-one"]?.value(forKey: "assetTiming") as? Int, 3)
+        XCTAssertEqual(runtimeAssetsByLensID["lens-two"]?.value(forKey: "identifier") as? String, "asset-shared")
+        XCTAssertEqual(runtimeAssetsByLensID["lens-two"]?.value(forKey: "assetTiming") as? Int, 6)
+    }
+
+    func testAcceptsRecoveredRuntimeAssetTypeAndTimingValues() throws {
+        let manifestURL = try makeValidFixture { manifest in
+            var assets = manifest["assets"] as! [[String: Any]]
+            assets[0]["assetType"] = 3
+            assets[0]["assetTiming"] = 4
+            manifest["assets"] = assets
+        }
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot
+        )
+
+        XCTAssertEqual(bundle.validatedAssetsByID["asset-shared"]?.manifest.assetType, 3)
+        XCTAssertEqual(bundle.validatedAssetsByID["asset-shared"]?.manifest.assetTiming, 4)
+    }
+
+    func testAcceptsZIPDependencyPackage() throws {
+        let zipData = Data([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0])
+        let manifestURL = try makeValidFixture { manifest in
+            let packageURL = self.resourceRoot
+                .appendingPathComponent("dependencies/shared.lzc")
+            try! zipData.write(to: packageURL)
+            var assets = manifest["assets"] as! [[String: Any]]
+            assets[0]["sha256"] = self.sha256(zipData)
+            manifest["assets"] = assets
+        }
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot
+        )
+
+        XCTAssertEqual(bundle.validatedAssetCount, 1)
+    }
+
     func testExcludesLocalizedLensesBeforeRuntimeConstruction() throws {
         let manifestURL = try makeValidFixture()
 

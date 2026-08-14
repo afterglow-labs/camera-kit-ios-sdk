@@ -13,6 +13,7 @@ public struct LocalLensManifest: Decodable, Equatable {
 
     public struct Asset: Decodable, Equatable {
         public let id: String
+        public let runtimeID: String?
         public let file: String
         public let sha256: String
         public let contentURL: URL
