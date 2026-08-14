@@ -12,6 +12,10 @@ static NSString *const AGAssetClassName = @"SCCameraKitLensAssetImpl";
 static NSString *const AGPreviewClassName = @"SCCameraKitLensPreviewImpl";
 static NSString *const AGSnapcodesClassName = @"SCCameraKitLensSnapcodesImpl";
 static NSString *const AGRepositoryClassName = @"SCCameraKitLensRepositoryImpl";
+static NSString *const AGGroupCollectionClassName = @"SCCameraKitGroupLensCollection";
+static NSString *const AGGroupAnnouncerClassName = @"SCCameraKitLensRepositoryGroupObserverAnnouncer";
+static const char *const AGFetchedResponsesLockIvarName = "_fetchedResponsesLock";
+static const char *const AGFetchedResponsesIvarName = "_fetchedResponses";
 
 static SEL AGAssetInitializer(void)
 {
@@ -23,9 +27,19 @@ static SEL AGLensInitializer(void)
     return NSSelectorFromString(@"initWithIdentifier:groupIdentifier:name:iconUrl:preview:vendorData:hintTranslations:defaultHintId:resourcesPath:contentUrl:checksum:assets:isThirdParty:facingPreference:featureMetadata:snapcodes:");
 }
 
-static SEL AGRegisterSelector(void)
+static SEL AGGroupCollectionInitializer(void)
 {
-    return NSSelectorFromString(@"registerLenses:groupID:");
+    return NSSelectorFromString(@"initWithLenses:isFullCollection:");
+}
+
+static SEL AGGroupAnnouncerSelector(void)
+{
+    return NSSelectorFromString(@"_groupAnnouncerForGroupID:");
+}
+
+static SEL AGGroupUpdateSelector(void)
+{
+    return NSSelectorFromString(@"repository:didUpdateLenses:forGroupID:");
 }
 
 static SEL AGUnregisterSelector(void)
@@ -115,6 +129,28 @@ static BOOL AGValidateMethod(
                     index, NSStringFromClass(cls), NSStringFromSelector(selector)]
             );
         }
+    }
+    return YES;
+}
+
+static BOOL AGValidateObjectIvar(Class cls, const char *name, NSError **error)
+{
+    Ivar ivar = class_getInstanceVariable(cls, name);
+    if (ivar == NULL) {
+        return AGFail(
+            error,
+            SCCameraKitLocalLensRuntimeErrorMissingRuntimeSymbol,
+            [NSString stringWithFormat:@"Missing %@.%s", NSStringFromClass(cls), name]
+        );
+    }
+
+    const char *type = AGSkipTypeQualifiers(ivar_getTypeEncoding(ivar));
+    if (type == NULL || type[0] != '@') {
+        return AGFail(
+            error,
+            SCCameraKitLocalLensRuntimeErrorABIMismatch,
+            [NSString stringWithFormat:@"Unexpected type for %@.%s", NSStringFromClass(cls), name]
+        );
     }
     return YES;
 }
@@ -231,14 +267,26 @@ static id AGAllocateObject(Class cls)
     Class previewClass = NSClassFromString(AGPreviewClassName);
     Class snapcodesClass = NSClassFromString(AGSnapcodesClassName);
     Class repositoryClass = NSClassFromString(AGRepositoryClassName);
+    Class groupCollectionClass = NSClassFromString(AGGroupCollectionClassName);
+    Class groupAnnouncerClass = NSClassFromString(AGGroupAnnouncerClassName);
     NSArray<NSString *> *classNames = @[
         AGLensClassName,
         AGAssetClassName,
         AGPreviewClassName,
         AGSnapcodesClassName,
         AGRepositoryClassName,
+        AGGroupCollectionClassName,
+        AGGroupAnnouncerClassName,
     ];
-    Class classes[] = { lensClass, assetClass, previewClass, snapcodesClass, repositoryClass };
+    Class classes[] = {
+        lensClass,
+        assetClass,
+        previewClass,
+        snapcodesClass,
+        repositoryClass,
+        groupCollectionClass,
+        groupAnnouncerClass,
+    };
     for (NSUInteger index = 0; index < classNames.count; index += 1) {
         if (classes[index] == Nil) {
             return AGFail(
@@ -265,13 +313,28 @@ static id AGAllocateObject(Class cls)
         return NO;
     }
 
-    const char *registerArguments[] = { @encode(id), @encode(SEL), @encode(id), @encode(id) };
-    if (!AGValidateMethod(repositoryClass, AGRegisterSelector(), @encode(void), registerArguments, 4, error)) {
+    const char *collectionArguments[] = { @encode(id), @encode(SEL), @encode(id), @encode(BOOL) };
+    if (!AGValidateMethod(groupCollectionClass, AGGroupCollectionInitializer(), @encode(id), collectionArguments, 4, error)) {
+        return NO;
+    }
+
+    const char *announcerArguments[] = { @encode(id), @encode(SEL), @encode(id) };
+    if (!AGValidateMethod(repositoryClass, AGGroupAnnouncerSelector(), @encode(id), announcerArguments, 3, error)) {
+        return NO;
+    }
+
+    const char *updateArguments[] = { @encode(id), @encode(SEL), @encode(id), @encode(id), @encode(id) };
+    if (!AGValidateMethod(groupAnnouncerClass, AGGroupUpdateSelector(), @encode(void), updateArguments, 5, error)) {
         return NO;
     }
 
     const char *unregisterArguments[] = { @encode(id), @encode(SEL), @encode(id) };
     if (!AGValidateMethod(repositoryClass, AGUnregisterSelector(), @encode(void), unregisterArguments, 3, error)) {
+        return NO;
+    }
+
+    if (!AGValidateObjectIvar(repositoryClass, AGFetchedResponsesLockIvarName, error)
+        || !AGValidateObjectIvar(repositoryClass, AGFetchedResponsesIvarName, error)) {
         return NO;
     }
 
@@ -407,14 +470,48 @@ static id AGAllocateObject(Class cls)
         if (self.registered) {
             return AGFail(error, SCCameraKitLocalLensRuntimeErrorRepositoryUnavailable, @"Local Lenses are already registered with another repository");
         }
-        if (![repository respondsToSelector:AGRegisterSelector()]
+        if (![repository respondsToSelector:AGGroupAnnouncerSelector()]
             || ![repository respondsToSelector:AGUnregisterSelector()]) {
             return AGFail(error, SCCameraKitLocalLensRuntimeErrorRepositoryUnavailable, @"Camera Kit repository registration API is unavailable");
         }
 
-        typedef void (*AGRepositoryMessage)(id, SEL, id, id);
-        AGRepositoryMessage send = (AGRepositoryMessage)objc_msgSend;
-        send(repository, AGRegisterSelector(), self.lenses, self.groupIdentifier);
+        Ivar lockIvar = class_getInstanceVariable([repository class], AGFetchedResponsesLockIvarName);
+        Ivar responsesIvar = class_getInstanceVariable([repository class], AGFetchedResponsesIvarName);
+        id lock = lockIvar == NULL ? nil : object_getIvar(repository, lockIvar);
+        id responses = responsesIvar == NULL ? nil : object_getIvar(repository, responsesIvar);
+        if (![lock respondsToSelector:@selector(lock)]
+            || ![lock respondsToSelector:@selector(unlock)]
+            || ![responses respondsToSelector:@selector(setObject:forKeyedSubscript:)]) {
+            return AGFail(error, SCCameraKitLocalLensRuntimeErrorABIMismatch, @"Camera Kit repository storage contract changed");
+        }
+
+        typedef id (*AGObjectArgumentMessage)(id, SEL, id);
+        AGObjectArgumentMessage sendObjectArgument = (AGObjectArgumentMessage)objc_msgSend;
+        id announcer = sendObjectArgument(repository, AGGroupAnnouncerSelector(), self.groupIdentifier);
+        if (![announcer respondsToSelector:AGGroupUpdateSelector()]) {
+            return AGFail(error, SCCameraKitLocalLensRuntimeErrorABIMismatch, @"Camera Kit group announcer contract changed");
+        }
+
+        Class collectionClass = NSClassFromString(AGGroupCollectionClassName);
+        typedef id (*AGCollectionInitializerIMP)(id, SEL, id, BOOL);
+        AGCollectionInitializerIMP initializeCollection = (AGCollectionInitializerIMP)objc_msgSend;
+        id collection = initializeCollection(
+            AGAllocateObject(collectionClass),
+            AGGroupCollectionInitializer(),
+            self.lenses,
+            YES
+        );
+        if (collection == nil) {
+            return AGFail(error, SCCameraKitLocalLensRuntimeErrorRepositoryUnavailable, @"Camera Kit rejected the local Lens collection");
+        }
+
+        [lock lock];
+        [responses setObject:collection forKeyedSubscript:self.groupIdentifier];
+        [lock unlock];
+
+        typedef void (*AGGroupUpdateMessage)(id, SEL, id, id, id);
+        AGGroupUpdateMessage sendGroupUpdate = (AGGroupUpdateMessage)objc_msgSend;
+        sendGroupUpdate(announcer, AGGroupUpdateSelector(), repository, self.lenses, self.groupIdentifier);
         self.registeredRepository = repository;
         self.registered = YES;
         self.registrationError = nil;

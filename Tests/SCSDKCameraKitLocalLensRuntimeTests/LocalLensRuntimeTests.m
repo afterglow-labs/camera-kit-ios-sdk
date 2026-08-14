@@ -1,14 +1,47 @@
 #import <XCTest/XCTest.h>
 #import <SCSDKCameraKitLocalLensRuntime.h>
 
-@interface AGFakeLensRepository : NSObject
+@interface AGFakeGroupAnnouncer : NSObject
+@property(nonatomic, copy) NSArray *updatedLenses;
+@property(nonatomic, copy) NSString *updatedGroupID;
+@property(nonatomic) NSUInteger updateCount;
+@end
+
+@implementation AGFakeGroupAnnouncer
+- (void)repository:(id)repository didUpdateLenses:(NSArray *)lenses forGroupID:(NSString *)groupID
+{
+    self.updatedLenses = lenses;
+    self.updatedGroupID = groupID;
+    self.updateCount += 1;
+}
+@end
+
+@interface AGFakeLensRepository : NSObject {
+@public
+    NSLock *_fetchedResponsesLock;
+    NSMutableDictionary *_fetchedResponses;
+}
 @property(nonatomic, copy) NSArray *registeredLenses;
 @property(nonatomic, copy) NSString *registeredGroupID;
 @property(nonatomic, copy) NSString *unregisteredGroupID;
 @property(nonatomic) NSUInteger registrationCount;
+@property(nonatomic, strong) AGFakeGroupAnnouncer *groupAnnouncer;
+- (id)collectionForGroupID:(NSString *)groupID;
 @end
 
 @implementation AGFakeLensRepository
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _fetchedResponsesLock = [NSLock new];
+        _fetchedResponses = [NSMutableDictionary dictionary];
+        _groupAnnouncer = [AGFakeGroupAnnouncer new];
+    }
+    return self;
+}
+
 - (void)registerLenses:(NSArray *)lenses groupID:(NSString *)groupID
 {
     self.registeredLenses = lenses;
@@ -19,6 +52,19 @@
 - (void)unregisterLensesForGroupID:(NSString *)groupID
 {
     self.unregisteredGroupID = groupID;
+}
+
+- (id)_groupAnnouncerForGroupID:(NSString *)groupID
+{
+    return self.groupAnnouncer;
+}
+
+- (id)collectionForGroupID:(NSString *)groupID
+{
+    [_fetchedResponsesLock lock];
+    id collection = _fetchedResponses[groupID];
+    [_fetchedResponsesLock unlock];
+    return collection;
 }
 @end
 
@@ -44,16 +90,22 @@
     XCTAssertTrue([extension conformsToProtocol:protocol]);
 }
 
-- (void)testSetRepositoryForwardsLensesWithoutChecksumBypass
+- (void)testSetRepositoryInstallsPrefetchedLensesWithoutUsingSerializedRegistration
 {
     SCCameraKitLocalLensRuntimeExtension *extension = [self makeExtension];
     AGFakeLensRepository *repository = [AGFakeLensRepository new];
 
-    XCTAssertFalse([repository respondsToSelector:NSSelectorFromString(@"registerLenses:groupID:skipChecksumValidation:")]);
     [extension setRepository:repository];
 
-    XCTAssertEqual(repository.registeredLenses.count, 1);
-    XCTAssertEqualObjects(repository.registeredGroupID, @"test.local");
+    id collection = [repository collectionForGroupID:@"test.local"];
+    NSArray *lenses = [collection valueForKey:@"lenses"];
+    id lens = lenses.firstObject;
+    XCTAssertEqual(repository.registrationCount, 0);
+    XCTAssertEqual(lenses.count, 1);
+    XCTAssertEqualObjects([lens valueForKey:@"identifier"], @"lens-one");
+    XCTAssertEqualObjects([lens valueForKey:@"resourcesPath"], @"/tmp/lens-one.lzc");
+    XCTAssertEqualObjects(repository.groupAnnouncer.updatedLenses, lenses);
+    XCTAssertEqualObjects(repository.groupAnnouncer.updatedGroupID, @"test.local");
     XCTAssertNil(extension.registrationError);
 }
 
@@ -76,16 +128,15 @@
     [extension setRepository:repository];
     [extension setRepository:repository];
 
-    XCTAssertEqual(repository.registrationCount, 1);
+    XCTAssertEqual(repository.registrationCount, 0);
+    XCTAssertEqual(repository.groupAnnouncer.updateCount, 1);
+    XCTAssertNotNil([repository collectionForGroupID:@"test.local"]);
 }
 
 - (void)testConstructsLensAndAssetWithLocalResourcePaths
 {
     SCCameraKitLocalLensRuntimeExtension *extension = [self makeExtension];
-    AGFakeLensRepository *repository = [AGFakeLensRepository new];
-    [extension setRepository:repository];
-
-    id lens = repository.registeredLenses.firstObject;
+    id lens = extension.lenses.firstObject;
     NSArray *assets = [lens valueForKey:@"assets"];
     id asset = assets.firstObject;
     XCTAssertEqualObjects(NSStringFromClass([lens class]), @"SCCameraKitLensImpl");
