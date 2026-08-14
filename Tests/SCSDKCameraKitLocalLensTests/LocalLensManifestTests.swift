@@ -1,8 +1,10 @@
 import CryptoKit
 import Foundation
+import UIKit
 import XCTest
 @testable import SCSDKCameraKitLocalLens
 import SCSDKCameraKitLocalLensRuntime
+import SCSDKCameraKitReferenceUI
 
 final class LocalLensManifestTests: XCTestCase {
     private var temporaryDirectory: URL!
@@ -222,6 +224,32 @@ final class LocalLensManifestTests: XCTestCase {
 
         XCTAssertEqual(runtime.groupIdentifier, "test.local")
         XCTAssertEqual(runtime.lenses.count, 2)
+    }
+
+    func testDefaultCarouselImageLoaderReadsFileURL() throws {
+        let imageURL = temporaryDirectory.appendingPathComponent("carousel-icon.png")
+        let png = try XCTUnwrap(
+            Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        )
+        try png.write(to: imageURL)
+        let completion = expectation(description: "Local carousel icon loaded")
+        let loader = DefaultCarouselImageLoader()
+        var loadedImage: UIImage?
+        var loadedError: Error?
+
+        loader.loadImage(
+            url: imageURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            queue: .main
+        ) { image, error in
+            loadedImage = image
+            loadedError = error
+            completion.fulfill()
+        }
+
+        wait(for: [completion], timeout: 2)
+        XCTAssertNotNil(loadedImage)
+        XCTAssertNil(loadedError)
     }
 
     private func makeValidFixture(
