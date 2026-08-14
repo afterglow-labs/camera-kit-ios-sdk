@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import XCTest
 @testable import SCSDKCameraKitLocalLens
+import SCSDKCameraKitLocalLensRuntime
 
 final class LocalLensManifestTests: XCTestCase {
     private var temporaryDirectory: URL!
@@ -206,6 +207,21 @@ final class LocalLensManifestTests: XCTestCase {
         XCTAssertEqual(bundle.groupName, "Local Test")
         XCTAssertEqual(bundle.lensCount, 2)
         XCTAssertEqual(bundle.validatedAssetCount, 1)
+    }
+
+    func testBuildsRuntimeExtensionFromValidatedManifest() throws {
+        let manifestURL = try makeValidFixture()
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot
+        )
+        let runtime = try XCTUnwrap(
+            bundle.initializationExtension as? SCCameraKitLocalLensRuntimeExtension
+        )
+
+        XCTAssertEqual(runtime.groupIdentifier, "test.local")
+        XCTAssertEqual(runtime.lenses.count, 2)
     }
 
     private func makeValidFixture(

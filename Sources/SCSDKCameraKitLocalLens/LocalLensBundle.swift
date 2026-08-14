@@ -1,14 +1,18 @@
 import CryptoKit
 import Foundation
+import SCSDKCameraKit
+import SCSDKCameraKitLocalLensRuntime
 
 public final class LocalLensBundle {
     public let groupID: String
     public let groupName: String
     public let lensCount: Int
+    public var initializationExtension: AnyObject { runtimeExtension }
 
     let validatedAssetsByID: [String: ValidatedAsset]
     let validatedLenses: [ValidatedLens]
     var validatedAssetCount: Int { validatedAssetsByID.count }
+    private let runtimeExtension: SCCameraKitLocalLensRuntimeExtension
 
     public init(manifestURL: URL, resourceRootURL: URL) throws {
         let manifestData = try Data(contentsOf: manifestURL, options: [.mappedIfSafe])
@@ -79,6 +83,67 @@ public final class LocalLensBundle {
         lensCount = lenses.count
         validatedAssetsByID = validatedAssets
         validatedLenses = lenses
+
+        let runtimeAssets = validatedAssets.mapValues { asset in
+            SCCameraKitLocalLensRuntimeAssetDescriptor(
+                identifier: asset.manifest.id,
+                assetType: asset.manifest.assetType,
+                assetTiming: asset.manifest.assetTiming,
+                contentURL: asset.manifest.contentURL,
+                checksum: asset.manifest.sha256.uppercased(),
+                resourcePath: asset.fileURL.path
+            )
+        }
+        let runtimeLenses = try lenses.map { lens -> SCCameraKitLocalLensRuntimeLensDescriptor in
+            let assets = try lens.manifest.assetIDs.map { assetID -> SCCameraKitLocalLensRuntimeAssetDescriptor in
+                guard let asset = runtimeAssets[assetID] else {
+                    throw LocalLensBundleError.missingAsset(assetID)
+                }
+                return asset
+            }
+            return SCCameraKitLocalLensRuntimeLensDescriptor(
+                identifier: lens.manifest.id,
+                groupIdentifier: manifest.group.id,
+                name: lens.manifest.name,
+                iconURL: lens.iconURL,
+                contentURL: lens.manifest.contentURL,
+                checksum: lens.manifest.sha256.uppercased(),
+                resourcePath: lens.packageURL.path,
+                facingPreference: lens.manifest.facingPreference,
+                assets: assets
+            )
+        }
+        do {
+            runtimeExtension = try SCCameraKitLocalLensRuntimeExtension(
+                groupIdentifier: manifest.group.id,
+                lenses: runtimeLenses
+            )
+        } catch {
+            throw LocalLensBundleError.runtimeUnavailable(error.localizedDescription)
+        }
+    }
+
+    public func register(
+        with cameraKit: CameraKitProtocol,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        cameraKit.register(initializationExtension) { success, error in
+            if success {
+                completion(.success(()))
+            } else {
+                completion(
+                    .failure(
+                        error ?? LocalLensBundleError.runtimeUnavailable(
+                            "Camera Kit rejected the local Lens extension"
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    public func unregister() {
+        runtimeExtension.unregisterLenses()
     }
 
     private static func resolveFile(_ relativePath: String, beneath root: URL) throws -> URL {
