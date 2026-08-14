@@ -227,6 +227,40 @@ final class LocalLensManifestTests: XCTestCase {
         XCTAssertEqual(bundle.validatedAssetCount, 1)
     }
 
+    func testExcludesLocalizedLensesBeforeRuntimeConstruction() throws {
+        let manifestURL = try makeValidFixture()
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot,
+            excludingLensIDs: ["lens-one"]
+        )
+
+        XCTAssertEqual(bundle.validatedLenses.map(\.manifest.id), ["lens-two"])
+        XCTAssertEqual(bundle.lensCount, 1)
+    }
+
+    func testPrioritizesLocalizedLensesWithoutChangingPartitionOrder() throws {
+        let manifestURL = try makeValidFixture { manifest in
+            var lenses = manifest["lenses"] as! [[String: Any]]
+            var thirdLens = lenses[0]
+            thirdLens["id"] = "lens-three"
+            lenses.append(thirdLens)
+            manifest["lenses"] = lenses
+        }
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot,
+            prioritizingLensIDs: ["lens-two", "lens-three", "missing-lens"]
+        )
+
+        XCTAssertEqual(
+            bundle.validatedLenses.map(\.manifest.id),
+            ["lens-two", "lens-three", "lens-one"]
+        )
+    }
+
     func testBuildsRuntimeExtensionFromValidatedManifest() throws {
         let manifestURL = try makeValidFixture()
 

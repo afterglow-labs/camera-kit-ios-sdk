@@ -14,7 +14,12 @@ public final class LocalLensBundle {
     var validatedAssetCount: Int { validatedAssetsByID.count }
     private let runtimeExtension: SCCameraKitLocalLensRuntimeExtension
 
-    public init(manifestURL: URL, resourceRootURL: URL) throws {
+    public init(
+        manifestURL: URL,
+        resourceRootURL: URL,
+        excludingLensIDs: Set<String> = [],
+        prioritizingLensIDs: Set<String> = []
+    ) throws {
         let manifestData = try Data(contentsOf: manifestURL, options: [.mappedIfSafe])
         let manifest = try JSONDecoder().decode(LocalLensManifest.self, from: manifestData)
         guard manifest.schemaVersion == 1 else {
@@ -51,12 +56,18 @@ public final class LocalLensBundle {
         }
 
         var seenLensIDs = Set<String>()
-        var lenses: [ValidatedLens] = []
         for lens in manifest.lenses {
             guard seenLensIDs.insert(lens.id).inserted else {
                 throw LocalLensBundleError.duplicateLensID(lens.id)
             }
+        }
 
+        let includedLenses = manifest.lenses.filter { !excludingLensIDs.contains($0.id) }
+        let orderedLenses = includedLenses.filter { prioritizingLensIDs.contains($0.id) }
+            + includedLenses.filter { !prioritizingLensIDs.contains($0.id) }
+
+        var lenses: [ValidatedLens] = []
+        for lens in orderedLenses {
             let packageURL = try Self.resolveFile(lens.file, beneath: root)
             try Self.validatePackage(at: packageURL, relativePath: lens.file, expectedSHA256: lens.sha256)
             let iconURL = try Self.resolveFile(lens.iconFile, beneath: root)
