@@ -3,6 +3,7 @@
 import SCSDKCameraKit
 import SCSDKCameraKitReferenceUI
 import SwiftUI
+import UIKit
 
 /// SwiftUI wrapper for the reference UI carousel view.
 public struct CarouselView: UIViewRepresentable {
@@ -13,15 +14,18 @@ public struct CarouselView: UIViewRepresentable {
     @Binding var selectedLens: Lens?
 
     let orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation
+    let lensContextMenuProvider: ((Lens) -> UIMenu?)?
 
     public init(
         availableLenses: Binding<[Lens]>,
         selectedLens: Binding<Lens?>,
-        orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation = .horizontal
+        orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation = .horizontal,
+        lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil
     ) {
         self._availableLenses = availableLenses
         self._selectedLens = selectedLens
         self.orientation = orientation
+        self.lensContextMenuProvider = lensContextMenuProvider
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -83,7 +87,14 @@ public extension CarouselView {
 
         public func item(for lens: Lens?) -> CarouselItem {
             guard let lens else { return EmptyItem() }
-            return CarouselItem(lensId: lens.id, groupId: lens.groupId, imageUrl: lens.iconUrl)
+            return CarouselItem(
+                lensId: lens.id,
+                groupId: lens.groupId,
+                imageUrl: lens.iconUrl,
+                contextMenuProvider: { [weak self] in
+                    self?.parent.lensContextMenuProvider?(lens)
+                }
+            )
         }
     }
 }

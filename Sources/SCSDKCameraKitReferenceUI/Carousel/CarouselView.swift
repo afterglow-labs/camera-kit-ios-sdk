@@ -358,6 +358,27 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
         selectItemHelper(at: indexPath.item)
     }
 
+    public func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfigurationForItemAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard
+            indexPath.item >= 0,
+            indexPath.item < items.count,
+            !(items[indexPath.item] is EmptyItem),
+            let menu = items[indexPath.item].contextMenuProvider?()
+        else {
+            return nil
+        }
+
+        return UIContextMenuConfiguration(
+            identifier: items[indexPath.item].id as NSString,
+            previewProvider: nil,
+            actionProvider: { _ in menu }
+        )
+    }
+
     // MARK: Scroll View
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {

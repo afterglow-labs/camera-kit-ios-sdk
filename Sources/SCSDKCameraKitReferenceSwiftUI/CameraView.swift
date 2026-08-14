@@ -44,6 +44,7 @@ public struct CameraView: View {
     private let showsLensCarousel: Bool
     private let showsCameraKitControls: Bool
     private let showsChromeVisibilityButton: Bool
+    private let lensContextMenuProvider: ((Lens) -> UIMenu?)?
     private let onVideoRecorded: ((URL) -> Void)?
 
     public init(
@@ -55,6 +56,7 @@ public struct CameraView: View {
         showsLensCarousel: Bool = true,
         showsCameraKitControls: Bool = true,
         showsChromeVisibilityButton: Bool = true,
+        lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil,
         onVideoRecorded: ((URL) -> Void)? = nil,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
     ) {
@@ -66,6 +68,7 @@ public struct CameraView: View {
         self.showsLensCarousel = showsLensCarousel
         self.showsCameraKitControls = showsCameraKitControls
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
+        self.lensContextMenuProvider = lensContextMenuProvider
         self.onVideoRecorded = onVideoRecorded
         self.onChromeHiddenChange = onChromeHiddenChange
     }
@@ -107,7 +110,8 @@ public struct CameraView: View {
                     CarouselView(
                         availableLenses: $state.lenses,
                         selectedLens: $state.selectedLens,
-                        orientation: .vertical
+                        orientation: .vertical,
+                        lensContextMenuProvider: lensContextMenuProvider
                     )
                     .frame(width: 62)
                     .frame(maxHeight: .infinity)

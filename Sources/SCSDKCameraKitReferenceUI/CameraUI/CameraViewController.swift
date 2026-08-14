@@ -27,6 +27,9 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
     /// Receives completed recordings instead of presenting the reference video preview.
     public var onVideoRecorded: ((URL) -> Void)?
+
+    /// Provides native context menus for Lens carousel items.
+    public var lensContextMenuProvider: ((Lens) -> UIMenu?)?
     
     private var lastUsedOrientation = UIInterfaceOrientation.portrait
 
@@ -590,7 +593,15 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
         [EmptyItem()]
             + cameraController.groupIDs.flatMap {
                 cameraController.cameraKit.lenses.repository.lenses(groupID: $0).map {
-                    CarouselItem(lensId: $0.id, groupId: $0.groupId, imageUrl: $0.iconUrl)
+                    let lens = $0
+                    return CarouselItem(
+                        lensId: lens.id,
+                        groupId: lens.groupId,
+                        imageUrl: lens.iconUrl,
+                        contextMenuProvider: { [weak self] in
+                            self?.lensContextMenuProvider?(lens)
+                        }
+                    )
                 }
             }
     }

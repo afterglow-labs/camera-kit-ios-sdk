@@ -20,18 +20,28 @@ public class CarouselItem: Identifiable, Equatable {
     /// downloaded image for lens icon
     public var image: UIImage?
 
+    /// Provides a native context menu when the item is long-pressed.
+    public let contextMenuProvider: (() -> UIMenu?)?
+
     /// Designated init for a carousel item
     /// - Parameters:
     ///   - lensId: lens id
     ///   - groupId: group id that lens belongs to
     ///   - imageUrl: optional image url of lens icon
     ///   - image: optional loaded UIImage of icon
-    public init(lensId: String, groupId: String, imageUrl: URL? = nil, image: UIImage? = nil) {
+    public init(
+        lensId: String,
+        groupId: String,
+        imageUrl: URL? = nil,
+        image: UIImage? = nil,
+        contextMenuProvider: (() -> UIMenu?)? = nil
+    ) {
         self.id = lensId + groupId
         self.lensId = lensId
         self.groupId = groupId
         self.imageUrl = imageUrl
         self.image = image
+        self.contextMenuProvider = contextMenuProvider
     }
 
     public static func == (lhs: CarouselItem, rhs: CarouselItem) -> Bool {
