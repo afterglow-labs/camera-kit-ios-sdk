@@ -33,6 +33,10 @@ public class DefaultCarouselImageLoader: CarouselImageLoader {
     public let urlSession: URLSession
     fileprivate var tasks: [URL: URLSessionDataTask] = [:]
     fileprivate let taskQueue = DispatchQueue(label: "com.snap.camerakit.referenceui.imageloader")
+    fileprivate let fileQueue = DispatchQueue(
+        label: "com.snap.camerakit.referenceui.imageloader.files",
+        qos: .userInitiated
+    )
 
     public init(urlSession: URLSession = .shared) {
         self.urlSession = urlSession
@@ -48,6 +52,25 @@ public class DefaultCarouselImageLoader: CarouselImageLoader {
         queue: DispatchQueue,
         completion: ((UIImage?, Error?) -> Void)?
     ) {
+        if url.isFileURL {
+            fileQueue.async {
+                do {
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    guard let image = UIImage(data: data) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    queue.async {
+                        completion?(image, nil)
+                    }
+                } catch {
+                    queue.async {
+                        completion?(nil, error)
+                    }
+                }
+            }
+            return
+        }
+
         let request = URLRequest(url: url, cachePolicy: cachePolicy)
         let task = urlSession.dataTask(with: request) { [weak self] data, _, error in
             self?.removeTask(url: url)

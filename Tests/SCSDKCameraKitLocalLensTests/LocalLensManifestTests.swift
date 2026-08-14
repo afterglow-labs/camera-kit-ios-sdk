@@ -6,6 +6,22 @@ import XCTest
 import SCSDKCameraKitLocalLensRuntime
 import SCSDKCameraKitReferenceUI
 
+private final class RejectingURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+
+    override func stopLoading() {}
+}
+
 final class LocalLensManifestTests: XCTestCase {
     private var temporaryDirectory: URL!
     private var resourceRoot: URL!
@@ -234,6 +250,35 @@ final class LocalLensManifestTests: XCTestCase {
         try png.write(to: imageURL)
         let completion = expectation(description: "Local carousel icon loaded")
         let loader = DefaultCarouselImageLoader()
+        var loadedImage: UIImage?
+        var loadedError: Error?
+
+        loader.loadImage(
+            url: imageURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            queue: .main
+        ) { image, error in
+            loadedImage = image
+            loadedError = error
+            completion.fulfill()
+        }
+
+        wait(for: [completion], timeout: 2)
+        XCTAssertNotNil(loadedImage)
+        XCTAssertNil(loadedError)
+    }
+
+    func testLocalCarouselImageBypassesURLSession() throws {
+        let imageURL = temporaryDirectory.appendingPathComponent("offline-carousel-icon.png")
+        let png = try XCTUnwrap(
+            Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        )
+        try png.write(to: imageURL)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RejectingURLProtocol.self]
+        let loader = DefaultCarouselImageLoader(urlSession: URLSession(configuration: configuration))
+        let completion = expectation(description: "Local icon loaded without URLSession")
         var loadedImage: UIImage?
         var loadedError: Error?
 

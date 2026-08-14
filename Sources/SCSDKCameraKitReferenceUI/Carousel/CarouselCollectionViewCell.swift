@@ -7,6 +7,8 @@ import UIKit
 public class CarouselCollectionViewCell: UICollectionViewCell {
     public let imageView: UIImageView = {
         let view = UIImageView()
+        view.contentMode = .scaleAspectFill
+        view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -33,6 +35,11 @@ public class CarouselCollectionViewCell: UICollectionViewCell {
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
         commonInit()
+    }
+
+    override public func layoutSubviews() {
+        super.layoutSubviews()
+        imageView.layer.cornerRadius = min(imageView.bounds.width, imageView.bounds.height) / 2
     }
 
     private func commonInit() {
