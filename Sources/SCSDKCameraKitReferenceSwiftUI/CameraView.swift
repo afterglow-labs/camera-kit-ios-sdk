@@ -88,7 +88,6 @@ public struct CameraView: View {
             .edgesIgnoringSafeArea(.all)
             if captureChromeVisible {
                 VStack {
-                    LensHeader(lensName: state.selectedLens?.name ?? state.selectedLens?.id ?? "")
                     MessageView(
                         lensName: state.selectedLens?.name ?? "",
                         lensID: state.selectedLens?.id ?? "",
@@ -417,7 +416,10 @@ private final class SnapAttributionContainerView: UIView {
         isUserInteractionEnabled = false
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.topAnchor.constraint(equalTo: bottomAnchor, constant: -118),
+            snapAttributionView.bottomAnchor.constraint(
+                equalTo: bottomAnchor,
+                constant: -CameraCaptureChromeLayout.attributionBottomClearance
+            ),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }
@@ -440,6 +442,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
         )
+        view.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
         return view
     }
 
@@ -450,6 +453,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
         uiView.syncControlState(with: cameraController)
+        uiView.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
     }
 
     final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
@@ -498,6 +502,18 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 @available(iOS 14.0, *)
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
+    let lensLabel: UILabel = {
+        let label = UILabel()
+        label.accessibilityIdentifier = CameraElements.lensLabel.id
+        label.font = .preferredFont(forTextStyle: .headline)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.layer.shadowColor = UIColor.black.cgColor
+        label.layer.shadowOpacity = 0.8
+        label.layer.shadowRadius = 2
+        label.layer.shadowOffset = CGSize(width: 0, height: 1)
+        return label
+    }()
     let flashControlView = FlashControlView()
     let flashControlDismissalHint = UILabel.controlDismissalHint()
     let toneMapControlView: AdjustmentControlView = {
@@ -593,6 +609,11 @@ private final class InclusiveCameraControlsView: UIView {
         )
     }
 
+    func updateLensTitle(_ title: String?) {
+        lensLabel.text = title
+        lensLabel.isHidden = title?.isEmpty != false
+    }
+
     private func syncAdjustment(
         _ action: CameraConfigurableActionView,
         control: AdjustmentControlView,
@@ -636,7 +657,7 @@ private final class InclusiveCameraControlsView: UIView {
 
     private func setup() {
         backgroundColor = .clear
-        [cameraActionsView, flashControlView, flashControlDismissalHint, toneMapControlView,
+        [cameraActionsView, lensLabel, flashControlView, flashControlDismissalHint, toneMapControlView,
          toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
@@ -654,6 +675,11 @@ private final class InclusiveCameraControlsView: UIView {
             cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6),
             cameraActionsView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
+
+            lensLabel.centerYAnchor.constraint(equalTo: cameraActionsView.flipCameraButton.centerYAnchor),
+            lensLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            lensLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 56),
+            lensLabel.trailingAnchor.constraint(lessThanOrEqualTo: cameraActionsView.leadingAnchor, constant: -8),
 
             flashControlView.trailingAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor, constant: -8),
             flashControlView.topAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
@@ -734,20 +760,6 @@ private final class InclusiveCameraControlsView: UIView {
     }
 }
 
-/// A sample implementation of a header view, which shows the lens name.
-struct LensHeader: View {
-    /// The name of the currently selected lens.
-    let lensName: String
-
-    var body: some View {
-        Text(lensName)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .font(.headline)
-            .foregroundColor(.white)
-            .padding()
-    }
-}
-
 @available(iOS 14.0, *)
 /// A reference implementation of a footer view, which contains a lens carousel, a camera button, and a close button
 struct LensFooter: View {
@@ -765,12 +777,15 @@ struct LensFooter: View {
             HStack(spacing: 18) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 21, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 34, height: 34)
+                        .frame(
+                            width: CameraCaptureChromeLayout.photoButtonDiameter,
+                            height: CameraCaptureChromeLayout.photoButtonDiameter
+                        )
                         .background(Color.black.opacity(0.42))
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 2))
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 3))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Take photo")
@@ -778,15 +793,18 @@ struct LensFooter: View {
                 Button(action: toggleRecording) {
                     Circle()
                         .fill(state.recording ? Color.red.opacity(0.72) : Color.red)
-                        .frame(width: 38, height: 38)
+                        .frame(
+                            width: CameraCaptureChromeLayout.videoButtonDiameter,
+                            height: CameraCaptureChromeLayout.videoButtonDiameter
+                        )
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                                .stroke(Color.white.opacity(0.9), lineWidth: 3)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Color.white.opacity(state.recording ? 0.95 : 0))
-                                .frame(width: 12, height: 12)
+                                .frame(width: 16, height: 16)
                         )
                 }
                 .buttonStyle(.plain)
@@ -796,7 +814,7 @@ struct LensFooter: View {
                     state.recordingFinalizing ? "Finishing recording" : (state.recording ? "Stop recording" : "Start recording")
                 )
             }
-            .frame(height: 42)
+            .frame(height: CameraCaptureChromeLayout.captureControlsHeight)
 
             Button(
                 action: {
@@ -809,7 +827,10 @@ struct LensFooter: View {
             .frame(width: 32, height: 32)
             .opacity(state.selectedLens == nil ? 0 : 1)
         }
-        .padding(.bottom, 38)
+        .padding(
+            .bottom,
+            CameraCaptureChromeLayout.captureControlsBottomClearance - 40
+        )
     }
 
     private func takePhoto() {

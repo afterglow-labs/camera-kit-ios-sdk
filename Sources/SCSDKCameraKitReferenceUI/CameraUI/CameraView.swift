@@ -152,12 +152,12 @@ open class CameraView: UIView {
     public let photoCaptureButton: UIButton = {
         let button = UIButton(type: .custom)
         let image = UIImage(systemName: "camera.fill")?
-            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
         button.accessibilityLabel = "Take photo"
         button.backgroundColor = UIColor.black.withAlphaComponent(0.42)
         button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
-        button.layer.borderWidth = 2.0
-        button.layer.cornerRadius = 17.0
+        button.layer.borderWidth = 3.0
+        button.layer.cornerRadius = CameraCaptureChromeLayout.photoButtonDiameter / 2
         button.tintColor = .white
         button.setImage(image, for: .normal)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -170,8 +170,8 @@ open class CameraView: UIView {
         button.accessibilityLabel = "Start recording"
         button.backgroundColor = UIColor(hex: 0xFF3447)
         button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
-        button.layer.borderWidth = 2.0
-        button.layer.cornerRadius = 19.0
+        button.layer.borderWidth = 3.0
+        button.layer.cornerRadius = CameraCaptureChromeLayout.videoButtonDiameter / 2
         button.tintColor = .white
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
@@ -389,13 +389,16 @@ extension CameraView {
         addSubview(captureControlsView)
 
         NSLayoutConstraint.activate([
-            photoCaptureButton.widthAnchor.constraint(equalToConstant: 34.0),
-            photoCaptureButton.heightAnchor.constraint(equalToConstant: 34.0),
-            videoCaptureButton.widthAnchor.constraint(equalToConstant: 38.0),
-            videoCaptureButton.heightAnchor.constraint(equalToConstant: 38.0),
+            photoCaptureButton.widthAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.photoButtonDiameter),
+            photoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.photoButtonDiameter),
+            videoCaptureButton.widthAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
+            videoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
             captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            captureControlsView.topAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -70.0),
-            captureControlsView.heightAnchor.constraint(equalToConstant: 42.0),
+            captureControlsView.bottomAnchor.constraint(
+                equalTo: bottomAnchor,
+                constant: -CameraCaptureChromeLayout.captureControlsBottomClearance
+            ),
+            captureControlsView.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.captureControlsHeight),
         ])
     }
 
@@ -403,7 +406,7 @@ extension CameraView {
         videoCaptureButton.accessibilityLabel = isRecording ? "Stop recording" : "Start recording"
         videoCaptureButton.backgroundColor = UIColor(hex: 0xFF3447).withAlphaComponent(isRecording ? 0.72 : 1.0)
         let image = isRecording
-            ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
+            ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
             : nil
         videoCaptureButton.setImage(image, for: .normal)
     }
@@ -493,7 +496,10 @@ extension CameraView {
     private func setupSnapAttributionView() {
         addSubview(snapAttributionView)
         NSLayoutConstraint.activate([
-            snapAttributionView.topAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -118.0),
+            snapAttributionView.bottomAnchor.constraint(
+                equalTo: bottomAnchor,
+                constant: -CameraCaptureChromeLayout.attributionBottomClearance
+            ),
             trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
         ])
     }

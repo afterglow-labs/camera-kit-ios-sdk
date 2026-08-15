@@ -13,7 +13,7 @@ public class SnapAttributionView: UIView {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.textColor = .white
-        label.font = UIFont.sc_regularFont(size: 12)
+        label.font = UIFont.sc_regularFont(size: CameraCaptureChromeLayout.attributionFontSize)
         label.textAlignment = .center
         label.text = CameraKitLocalizedString(key: "camera_kit_powered_by", comment: "")
         label.sizeToFit()
