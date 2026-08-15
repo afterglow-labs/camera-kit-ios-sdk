@@ -706,6 +706,15 @@ extension CameraViewController {
                 self.recordingFinalizing = false
                 guard let url else {
                     self.restoreActiveCameraState()
+                    if let error {
+                        let alert = UIAlertController(
+                            title: "Recording Failed",
+                            message: error.localizedDescription,
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self.present(alert, animated: true)
+                    }
                     return
                 }
 

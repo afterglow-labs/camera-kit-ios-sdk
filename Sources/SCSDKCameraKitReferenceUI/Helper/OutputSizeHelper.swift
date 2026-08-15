@@ -34,6 +34,19 @@ public enum OutputSizeHelper {
             }
         }
 
-        return CGSize(width: width, height: height)
+        return encoderCompatibleSize(CGSize(width: width, height: height))
+    }
+
+    /// Returns positive, even pixel dimensions accepted by the video encoder.
+    public static func encoderCompatibleSize(_ size: CGSize) -> CGSize {
+        func compatibleDimension(_ value: CGFloat) -> CGFloat {
+            guard value.isFinite, value > 0 else { return 0 }
+            return max(2, floor(value / 2) * 2)
+        }
+
+        return CGSize(
+            width: compatibleDimension(size.width),
+            height: compatibleDimension(size.height)
+        )
     }
 }

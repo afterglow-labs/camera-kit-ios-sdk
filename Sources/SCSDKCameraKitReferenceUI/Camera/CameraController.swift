@@ -126,6 +126,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// An output used for recording videos.
     public var recorder: Recorder?
 
+    /// Encoder settings used for the next post-Lens recording.
+    public private(set) var recordingConfiguration: RecordingConfiguration?
+    private let recordingResolutionOutput = RecordingResolutionOutput()
+    private var recordingResolutionOutputAttached = false
+
     /// An output used for live web preview streaming.
     public private(set) var streamOutput: CameraKitWebSocketStreamOutput?
 
@@ -337,6 +342,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 cameraKit.remove(output: recorder.output)
                 self.recorder = nil
             }
+            deactivateRecordingResolutionOutput()
             if let photoCaptureOutput {
                 cameraKit.remove(output: photoCaptureOutput)
                 self.photoCaptureOutput = nil
@@ -659,15 +665,25 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             old.finishRecording(completion: nil)
             cameraKit.remove(output: old.output)
         }
-        recorder = try? Recorder(
-            url: URL(fileURLWithPath: "\(NSTemporaryDirectory())\(UUID().uuidString).mp4"),
-            orientation: cameraKit.activeInput.frameOrientation,
-            size: OutputSizeHelper.normalizedSize(
+        let configuration = recordingConfiguration ?? RecordingConfiguration(
+            outputSize: OutputSizeHelper.normalizedSize(
                 for: cameraKit.activeInput.frameSize,
                 aspectRatio: resolvedCaptureAspectRatio,
                 orientation: cameraKit.activeInput.frameOrientation
-            )
+            ),
+            framesPerSecond: 30
         )
+
+        do {
+            recorder = try Recorder(
+                url: URL(fileURLWithPath: "\(NSTemporaryDirectory())\(UUID().uuidString).mp4"),
+                orientation: cameraKit.activeInput.frameOrientation,
+                configuration: configuration
+            )
+        } catch {
+            recorder = nil
+            print("[CameraKit Recorder] configuration failed: \(error.localizedDescription)")
+        }
         if let recorder {
             cameraKit.add(output: recorder.output)
         }
@@ -690,8 +706,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
 
         uiDelegate?.cameraControllerRequestedSnapAttributionViewHide(self)
+        activateRecordingResolutionOutput()
         configureRecorder()
-        recorder?.startRecording()
+        guard let recorder else {
+            deactivateRecordingResolutionOutput()
+            return
+        }
+        recorder.startRecording()
     }
 
     /// Cancel recording video.
@@ -703,6 +724,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// - Parameter completion: completion to be called with a URL to the recorded video or an error.
     open func finishRecording(completion: ((URL?, Error?) -> Void)?) {
         guard let recorder else {
+            deactivateRecordingResolutionOutput()
             DispatchQueue.main.async {
                 completion?(nil, nil)
             }
@@ -715,6 +737,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
         }
         cameraKit.remove(output: recorder.output)
+        deactivateRecordingResolutionOutput()
         captureSessionQueue.async { [weak self] in
             guard let device = self?.cameraInputDevice else { return }
             do {
@@ -728,6 +751,22 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
         }
         uiDelegate?.cameraControllerRequestedSnapAttributionViewShow(self)
+    }
+
+    private func activateRecordingResolutionOutput() {
+        guard let recordingConfiguration else { return }
+        if !recordingResolutionOutputAttached {
+            cameraKit.add(output: recordingResolutionOutput)
+            recordingResolutionOutputAttached = true
+        }
+        recordingResolutionOutput.setOutputResolution(recordingConfiguration.outputSize)
+    }
+
+    private func deactivateRecordingResolutionOutput() {
+        guard recordingResolutionOutputAttached else { return }
+        recordingResolutionOutput.setOutputResolution(.zero)
+        cameraKit.remove(output: recordingResolutionOutput)
+        recordingResolutionOutputAttached = false
     }
 
     // MARK: Live Streaming
@@ -777,6 +816,19 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             self.desiredLensStack.select(lens, matches: self.lensesMatch)
             self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
         }
+    }
+
+    /// Configures the post-Lens pixel dimensions and frame rate used by subsequent recordings.
+    open func setRecordingConfiguration(outputSize: CGSize, framesPerSecond: Int) {
+        recordingConfiguration = RecordingConfiguration(
+            outputSize: outputSize,
+            framesPerSecond: framesPerSecond
+        )
+    }
+
+    /// Refreshes Camera Kit's cached input dimensions after the host changes AVCaptureDevice.activeFormat.
+    open func refreshActiveInputAttributes() {
+        cameraKit.activeInput.setVideoOrientation(configuredOrientation)
     }
     
     public func warmupLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
