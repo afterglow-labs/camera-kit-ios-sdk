@@ -6,7 +6,7 @@ final class LensLayerStackTests: XCTestCase {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         XCTAssertEqual(stack.applied, ["retouch"])
 
         stack.select("comic", matches: ==)
@@ -28,7 +28,7 @@ final class LensLayerStackTests: XCTestCase {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
         stack.select("retouch", matches: ==)
 
@@ -40,7 +40,7 @@ final class LensLayerStackTests: XCTestCase {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         stack.unpin()
 
         XCTAssertTrue(stack.applied.isEmpty)
@@ -51,7 +51,7 @@ final class LensLayerStackTests: XCTestCase {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
         stack.remove(where: { $0 == "retouch" })
 
@@ -64,7 +64,7 @@ final class LensLayerStackTests: XCTestCase {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
         stack.remove(where: { $0 == "comic" })
 
@@ -76,17 +76,17 @@ final class LensLayerStackTests: XCTestCase {
     func testPinRequiresAnUnpinnedCurrentSelection() {
         var stack = LensLayerStack<String>()
 
-        XCTAssertFalse(stack.pinCurrent(matches: ==))
+        XCTAssertFalse(stack.pinCurrent())
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
-        XCTAssertFalse(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
+        XCTAssertFalse(stack.pinCurrent())
     }
 
     func testResetClearsBothLayers() {
         var stack = LensLayerStack<String>()
 
         stack.select("retouch", matches: ==)
-        XCTAssertTrue(stack.pinCurrent(matches: ==))
+        XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
         stack.reset()
 

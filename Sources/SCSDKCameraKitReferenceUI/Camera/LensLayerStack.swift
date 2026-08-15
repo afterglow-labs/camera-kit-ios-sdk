@@ -19,14 +19,8 @@ struct LensLayerStack<Element> {
     }
 
     @discardableResult
-    mutating func pinCurrent(matches: (Element, Element) -> Bool) -> Bool {
-        if let pinnedBase {
-            if let selectedTop {
-                _ = matches(pinnedBase, selectedTop)
-            }
-            return false
-        }
-        guard let selectedTop else { return false }
+    mutating func pinCurrent() -> Bool {
+        guard pinnedBase == nil, let selectedTop else { return false }
 
         pinnedBase = selectedTop
         self.selectedTop = nil
@@ -53,5 +47,25 @@ struct LensLayerStack<Element> {
     mutating func reset() {
         pinnedBase = nil
         selectedTop = nil
+    }
+}
+
+struct LensLayerIdentity: Equatable {
+    let id: String
+    let groupID: String
+}
+
+enum LensLayerDisplay {
+    static func name(base: String?, top: String?) -> String {
+        switch (base, top) {
+        case let (base?, top?):
+            return "\(base) + \(top)"
+        case let (base?, nil):
+            return "\(base) (Pinned)"
+        case let (nil, top?):
+            return top
+        case (nil, nil):
+            return ""
+        }
     }
 }

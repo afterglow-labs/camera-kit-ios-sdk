@@ -4,6 +4,7 @@ import ARKit
 import AVFoundation
 import AVKit
 import SCSDKCameraKit
+import SCSDKCameraKitCompositeLensRuntime
 import UIKit
 
 public protocol CameraControllerUIDelegate: AnyObject {
@@ -32,6 +33,9 @@ public protocol CameraControllerUIDelegate: AnyObject {
     /// Notifies the delegate that Camera Kit adjustment or ring-light state changed.
     /// Implementations should refresh any controls that mirror the controller's public state.
     func cameraControllerControlsDidChange(_ controller: CameraController)
+
+    /// Notifies the delegate after Camera Kit reaches a new confirmed Lens layer state.
+    func cameraControllerLensStackDidChange(_ controller: CameraController)
 
     /// Notifies the delegate that the flash state has changed such that the flash control should be hidden.
     /// - Parameter controller: The camera controller.
@@ -68,6 +72,7 @@ public protocol CameraControllerUIDelegate: AnyObject {
 
 public extension CameraControllerUIDelegate {
     func cameraControllerControlsDidChange(_ controller: CameraController) {}
+    func cameraControllerLensStackDidChange(_ controller: CameraController) {}
 }
 
 /// Selects the rear capture device used as Camera Kit's input.
@@ -139,8 +144,35 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     // MARK: State
 
-    /// The currently selected and active lens.
-    public private(set) var currentLens: Lens?
+    /// The confirmed pinned base Lens, if one is active.
+    public var pinnedBaseLens: Lens? {
+        readLensState { activeLensStack.pinnedBase }
+    }
+
+    /// Confirmed active Lenses in Camera Kit application order: base, then top.
+    public var appliedLenses: [Lens] {
+        readLensState { activeLensStack.applied }
+    }
+
+    /// The currently selected Lens. A top Lens takes precedence over a pinned base.
+    public var currentLens: Lens? {
+        readLensState { activeLensStack.current }
+    }
+
+    /// User-facing description of the confirmed active Lens stack.
+    public var lensDisplayName: String {
+        readLensState {
+            LensLayerDisplay.name(
+                base: activeLensStack.pinnedBase.map(lensName),
+                top: activeLensStack.selectedTop.map(lensName)
+            )
+        }
+    }
+
+    /// Whether the current Camera Kit processor exposes its native composite-Lens entry point.
+    public var supportsCompositeLenses: Bool {
+        SCCameraKitProcessorSupportsCompositeLenses(cameraKit.lenses.processor)
+    }
 
     /// List of lens repository groups to observe/show in carousel
     public var groupIDs: [String] = [] {
@@ -248,6 +280,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         self.cameraKit = cameraKit
         self.captureSession = captureSession
         super.init()
+        lensQueue.setSpecific(key: lensQueueKey, value: ())
     }
 
     // MARK: Configuration
@@ -310,10 +343,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
             cameraKit.activeInput.stopRunning()
             cameraKit.stop {
-                self.currentLens = nil
-                self.uiDelegate = nil
-                DispatchQueue.main.async {
-                    completion?()
+                self.lensQueue.async {
+                    self.desiredLensStack.reset()
+                    self.activeLensStack.reset()
+                    DispatchQueue.main.async {
+                        self.uiDelegate?.cameraControllerLensStackDidChange(self)
+                        self.uiDelegate = nil
+                        completion?()
+                    }
                 }
             }
         }
@@ -530,7 +567,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func switchToOfflineInput(_ input: Input, completion: (() -> Void)?) {
-        let lensToReapply = currentLens
+        let shouldReapplyLenses = !readLensState { desiredLensStack.applied.isEmpty }
 
         captureSessionQueue.async { [weak self] in
             guard let self else { return }
@@ -554,9 +591,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 )
                 input.startRunning()
 
-                if let lensToReapply {
-                    self.currentLens = nil
-                    self.applyLens(lensToReapply)
+                if shouldReapplyLenses {
+                    self.reapplyCurrentLenses()
                 }
 
                 DispatchQueue.main.async {
@@ -602,11 +638,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     // MARK: LensPrefetcherObserver
 
     public func prefetcher(_ prefetcher: LensPrefetcher, didUpdate lens: Lens, status: LensFetchStatus) {
-        guard
-            let currentLens,
-            lens.id == currentLens.id,
-            lens.groupId == currentLens.groupId
-        else {
+        guard appliedLenses.contains(where: { lensesMatch($0, lens) }) else {
             return
         }
 
@@ -737,7 +769,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ///   - lens: selected lens
     ///   - completion: callback on completion with success/failure
     public func applyLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
-        enqueueLensOperation(.apply(lens, completion))
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            self.desiredLensStack.select(lens, matches: self.lensesMatch)
+            self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+        }
     }
     
     public func warmupLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
@@ -757,17 +796,116 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
-    /// Clear the currently selected lens, and return to unmodified camera feed.
-    ///   - willReapply: if true, cameraKit will not clear out the "currentLens" property, and reapplyCurrentLens will apply the lens that was cleared.
+    /// Clears the selected top Lens. A pinned base remains applied.
+    ///   - willReapply: if true, physically clears Camera Kit while retaining the full desired stack for `reapplyCurrentLenses()`.
     ///   - completion: callback on completion with success/failure
     public func clearLens(willReapply: Bool = false, completion: ((Bool) -> Void)? = nil) {
-        enqueueLensOperation(.clear(willReapply: willReapply, completion: completion))
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            if willReapply {
+                self.enqueueLensOperationOnQueue(.clear(preserveStack: true, completion: completion))
+                return
+            }
+
+            self.desiredLensStack.clearTop()
+            if self.desiredLensStack.applied.isEmpty {
+                self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
+            } else {
+                self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+            }
+        }
     }
 
-    /// If a lens has already been applied, reapply it.
+    /// Clears every Lens and removes any pinned base state.
+    public func clearAllLenses(completion: ((Bool) -> Void)? = nil) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            self.desiredLensStack.reset()
+            self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
+        }
+    }
+
+    /// Pins the confirmed current Lens as the session's base layer.
+    public func pinCurrentLensAsBase(completion: ((Bool) -> Void)? = nil) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            guard self.desiredLensStack.pinCurrent() else {
+                completion?(false)
+                return
+            }
+            self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+        }
+    }
+
+    /// Removes the pinned role. An active top Lens remains as the sole Lens.
+    public func unpinBaseLens(completion: ((Bool) -> Void)? = nil) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped, self.desiredLensStack.pinnedBase != nil else {
+                completion?(false)
+                return
+            }
+            self.desiredLensStack.unpin()
+            if self.desiredLensStack.applied.isEmpty {
+                self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
+            } else {
+                self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+            }
+        }
+    }
+
+    /// Removes a Lens from either active role using its stable repository identity.
+    public func removeLensFromActiveStack(
+        id: String,
+        groupID: String,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            let identity = LensLayerIdentity(id: id, groupID: groupID)
+            let before = self.desiredLensStack
+            self.desiredLensStack.remove { self.identity(for: $0) == identity }
+            guard !self.lensStacksMatch(before, self.desiredLensStack) else {
+                completion?(true)
+                return
+            }
+            if self.desiredLensStack.applied.isEmpty {
+                self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
+            } else {
+                self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+            }
+        }
+    }
+
+    /// Returns whether the supplied Lens is the confirmed pinned base.
+    public func isPinnedBase(_ lens: Lens) -> Bool {
+        readLensState {
+            activeLensStack.pinnedBase.map { lensesMatch($0, lens) } ?? false
+        }
+    }
+
+    /// Reapplies the complete desired Lens stack.
+    public func reapplyCurrentLenses() {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped, !self.desiredLensStack.applied.isEmpty else { return }
+            self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: nil))
+        }
+    }
+
+    /// Compatibility alias for callers written against the single-Lens controller.
     public func reapplyCurrentLens() {
-        guard let currentLens else { return }
-        applyLens(currentLens)
+        reapplyCurrentLenses()
     }
 
     /// Sets app-provided launch data that custom lenses can read when they are applied.
@@ -777,7 +915,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public func setLensLaunchDataOverrides(_ overrides: [String: String], reapplyCurrentLens: Bool = false) {
         lensLaunchDataOverrides = overrides
         if reapplyCurrentLens {
-            self.reapplyCurrentLens()
+            reapplyCurrentLenses()
         }
     }
 
@@ -960,10 +1098,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// serial queue used to apply/clear lenses
     fileprivate let lensQueue = DispatchQueue(label: "com.snap.camerakit.sample.lensqueue", qos: .userInitiated)
+    private let lensQueueKey = DispatchSpecificKey<Void>()
+    private var desiredLensStack = LensLayerStack<Lens>()
+    private var activeLensStack = LensLayerStack<Lens>()
 
     private enum PendingLensOperation {
-        case apply(Lens, ((Bool) -> Void)?)
-        case clear(willReapply: Bool, completion: ((Bool) -> Void)?)
+        case apply(stack: LensLayerStack<Lens>, completion: ((Bool) -> Void)?)
+        case clear(preserveStack: Bool, completion: ((Bool) -> Void)?)
 
         func complete(_ success: Bool) {
             switch self {
@@ -988,21 +1129,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     fileprivate var isAdjustingFocusObservation: NSKeyValueObservation?
 
-    private func enqueueLensOperation(_ operation: PendingLensOperation) {
-        lensQueue.async { [weak self] in
-            guard let self, !self.lensOperationsStopped else {
-                operation.complete(false)
-                return
-            }
-
-            self.pendingLensOperation?.complete(false)
-            self.pendingLensOperation = operation
-            if case let .apply(lens, _) = operation {
-                // Reflect the newest carousel selection while an earlier apply finishes.
-                self.currentLens = lens
-            }
-            self.startNextLensOperationIfNeeded()
-        }
+    private func enqueueLensOperationOnQueue(_ operation: PendingLensOperation) {
+        dispatchPrecondition(condition: .onQueue(lensQueue))
+        pendingLensOperation?.complete(false)
+        pendingLensOperation = operation
+        startNextLensOperationIfNeeded()
     }
 
     private func startNextLensOperationIfNeeded() {
@@ -1011,49 +1142,61 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         lensOperationInFlight = true
 
         guard let processor = cameraKit.lenses.processor else {
+            switch operation {
+            case let .apply(stack, _):
+                if lensStacksMatch(desiredLensStack, stack) {
+                    desiredLensStack = activeLensStack
+                }
+            case let .clear(preserveStack, _):
+                if !preserveStack, desiredLensStack.applied.isEmpty {
+                    desiredLensStack = activeLensStack
+                }
+            }
             finishLensOperation(operation, success: false)
             return
         }
 
         switch operation {
-        case let .apply(lens, _):
-            processor.apply(lens: lens, launchData: launchData(for: lens)) { [weak self] success in
+        case let .apply(stack, _):
+            applyLensStack(stack, processor: processor) { [weak self] success in
                 guard let self else {
                     operation.complete(false)
                     return
                 }
                 self.lensQueue.async {
+                    guard !self.lensOperationsStopped else {
+                        self.finishStoppedLensOperation(operation)
+                        return
+                    }
                     if success {
-                        print("\(lens.name ?? "Unnamed") (\(lens.id)) Applied")
-                        if self.currentLens?.id == lens.id, self.currentLens?.groupId == lens.groupId {
-                            DispatchQueue.main.async { [weak self] in
-                                self?.changeCameraPosition(with: lens.facingPreference)
-                            }
-                        }
+                        self.finishSuccessfulApply(stack, operation: operation)
+                    } else if stack.applied.count == 2, stack.pinnedBase != nil {
+                        self.restoreBaseAfterCompositeFailure(stack, processor: processor, operation: operation)
                     } else {
-                        if self.currentLens?.id == lens.id, self.currentLens?.groupId == lens.groupId {
-                            self.currentLens = nil
+                        if self.lensStacksMatch(self.desiredLensStack, stack) {
+                            self.desiredLensStack = self.activeLensStack
                         }
                         print("Lens failed to apply")
+                        self.finishLensOperation(operation, success: false)
                     }
-                    self.finishLensOperation(operation, success: success)
                 }
             }
-        case let .clear(willReapply, _):
+        case let .clear(preserveStack, _):
             processor.clear { [weak self] completed in
                 guard let self else {
                     operation.complete(false)
                     return
                 }
                 self.lensQueue.async {
-                    let hasNewerApply: Bool
-                    if case .apply = self.pendingLensOperation {
-                        hasNewerApply = true
-                    } else {
-                        hasNewerApply = false
+                    guard !self.lensOperationsStopped else {
+                        self.finishStoppedLensOperation(operation)
+                        return
                     }
-                    if !willReapply, completed, !hasNewerApply {
-                        self.currentLens = nil
+                    if completed, !preserveStack, self.desiredLensStack.applied.isEmpty {
+                        self.activeLensStack.reset()
+                        self.publishLensStackDidChange()
+                    } else if !completed, !preserveStack, self.desiredLensStack.applied.isEmpty {
+                        self.desiredLensStack = self.activeLensStack
                     }
                     self.finishLensOperation(operation, success: completed)
                 }
@@ -1067,6 +1210,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         startNextLensOperationIfNeeded()
     }
 
+    private func finishStoppedLensOperation(_ operation: PendingLensOperation) {
+        lensOperationInFlight = false
+        operation.complete(false)
+    }
+
     private func stopPendingLensOperations() {
         lensQueue.async { [weak self] in
             guard let self else { return }
@@ -1074,6 +1222,182 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             self.pendingLensOperation?.complete(false)
             self.pendingLensOperation = nil
         }
+    }
+
+    private func applyLensStack(
+        _ stack: LensLayerStack<Lens>,
+        processor: LensProcessor,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let lenses = stack.applied
+        switch lenses.count {
+        case 0:
+            processor.clear(completion: completion)
+        case 1:
+            let lens = lenses[0]
+            processor.apply(lens: lens, launchData: launchData(for: lens), completion: completion)
+        case 2:
+            let lensObjects: [Any] = lenses.map { $0 }
+            let launchData = lenses.map(compositeLaunchData)
+            SCCameraKitApplyCompositeLenses(
+                processor,
+                lensObjects,
+                launchData,
+                completion
+            )
+        default:
+            completion(false)
+        }
+    }
+
+    private func finishSuccessfulApply(_ stack: LensLayerStack<Lens>, operation: PendingLensOperation) {
+        let isNewestRequest = lensStacksMatch(desiredLensStack, stack)
+        if isNewestRequest {
+            activeLensStack = stack
+            if let lens = stack.current {
+                print("\(lensName(lens)) (\(lens.id)) Applied")
+                DispatchQueue.main.async { [weak self] in
+                    self?.changeCameraPosition(with: lens.facingPreference)
+                }
+            }
+            publishLensStackDidChange()
+        }
+        finishLensOperation(operation, success: true)
+    }
+
+    private func restoreBaseAfterCompositeFailure(
+        _ failedStack: LensLayerStack<Lens>,
+        processor: LensProcessor,
+        operation: PendingLensOperation
+    ) {
+        var baseOnly = failedStack
+        baseOnly.clearTop()
+        guard let base = baseOnly.pinnedBase else {
+            finishLensOperation(operation, success: false)
+            return
+        }
+
+        processor.apply(lens: base, launchData: launchData(for: base)) { [weak self] restored in
+            guard let self else {
+                operation.complete(false)
+                return
+            }
+            self.lensQueue.async {
+                guard !self.lensOperationsStopped else {
+                    self.finishStoppedLensOperation(operation)
+                    return
+                }
+                if restored {
+                    self.activeLensStack = baseOnly
+                    if self.lensStacksMatch(self.desiredLensStack, failedStack) {
+                        self.desiredLensStack = baseOnly
+                        self.publishLensStackDidChange()
+                    }
+                    print("Composite Lens apply failed; restored pinned base \(self.lensName(base)) (\(base.id))")
+                    self.finishLensOperation(operation, success: false)
+                } else if
+                    self.lensStacksMatch(self.desiredLensStack, failedStack),
+                    let top = failedStack.selectedTop
+                {
+                    self.applyTopAfterUnavailableBase(
+                        top,
+                        failedStack: failedStack,
+                        processor: processor,
+                        operation: operation
+                    )
+                } else {
+                    if self.lensStacksMatch(self.desiredLensStack, failedStack) {
+                        self.desiredLensStack = self.activeLensStack
+                    }
+                    print("Composite Lens apply and pinned base restore both failed")
+                    self.finishLensOperation(operation, success: false)
+                }
+            }
+        }
+    }
+
+    private func applyTopAfterUnavailableBase(
+        _ top: Lens,
+        failedStack: LensLayerStack<Lens>,
+        processor: LensProcessor,
+        operation: PendingLensOperation
+    ) {
+        processor.apply(lens: top, launchData: launchData(for: top)) { [weak self] applied in
+            guard let self else {
+                operation.complete(false)
+                return
+            }
+            self.lensQueue.async {
+                guard !self.lensOperationsStopped else {
+                    self.finishStoppedLensOperation(operation)
+                    return
+                }
+                if applied {
+                    var topOnly = LensLayerStack<Lens>()
+                    topOnly.select(top, matches: self.lensesMatch)
+                    self.activeLensStack = topOnly
+                    if self.lensStacksMatch(self.desiredLensStack, failedStack) {
+                        self.desiredLensStack = topOnly
+                        self.publishLensStackDidChange()
+                    }
+                    print("Pinned base unavailable; applied top Lens \(self.lensName(top)) (\(top.id)) alone")
+                } else if self.lensStacksMatch(self.desiredLensStack, failedStack) {
+                    self.desiredLensStack = self.activeLensStack
+                    print("Composite Lens, pinned base, and top Lens apply all failed")
+                }
+                self.finishLensOperation(operation, success: false)
+            }
+        }
+    }
+
+    private func publishLensStackDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.uiDelegate?.cameraControllerLensStackDidChange(self)
+        }
+    }
+
+    private func readLensState<T>(_ body: () -> T) -> T {
+        if DispatchQueue.getSpecific(key: lensQueueKey) != nil {
+            return body()
+        }
+        return lensQueue.sync(execute: body)
+    }
+
+    private func lensesMatch(_ lhs: Lens, _ rhs: Lens) -> Bool {
+        identity(for: lhs) == identity(for: rhs)
+    }
+
+    private func identity(for lens: Lens) -> LensLayerIdentity {
+        LensLayerIdentity(id: lens.id, groupID: lens.groupId)
+    }
+
+    private func lensStacksMatch(_ lhs: LensLayerStack<Lens>, _ rhs: LensLayerStack<Lens>) -> Bool {
+        optionalLensesMatch(lhs.pinnedBase, rhs.pinnedBase)
+            && optionalLensesMatch(lhs.selectedTop, rhs.selectedTop)
+    }
+
+    private func optionalLensesMatch(_ lhs: Lens?, _ rhs: Lens?) -> Bool {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?):
+            return lensesMatch(lhs, rhs)
+        case (nil, nil):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func lensName(_ lens: Lens) -> String {
+        let name = lens.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? lens.id : name
+    }
+
+    private func compositeLaunchData(for lens: Lens) -> Any {
+        guard !lens.vendorData.isEmpty || !lensLaunchDataOverrides.isEmpty else {
+            return NSNull()
+        }
+        return launchData(for: lens)
     }
 
     private func releasePrefetchResources(forGroupID groupID: String) {
@@ -1359,9 +1683,8 @@ extension CameraController {
     /// - Parameter notification: the NSNotification.
     @objc
     private func appWillEnterForegroundNotification(_ notification: Notification) {
-        // SDK pauses/disables lens in background, so re-apply the lens when entering foreground
-        guard let currentLens else { return }
-        applyLens(currentLens)
+        // SDK pauses/disables Lens processing in the background, so restore the complete stack.
+        reapplyCurrentLenses()
     }
 }
 
