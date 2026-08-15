@@ -93,6 +93,7 @@ public struct CameraView: View {
                         lensID: state.selectedLens?.id ?? "",
                         showing: state.showingMessage
                     )
+                    .padding(.top, CameraCaptureChromeLayout.lensStatusTopClearance)
                     Spacer()
                     MediaPickerView(provider: cameraController.lensMediaProvider)
                     LensFooter(
@@ -774,7 +775,7 @@ struct LensFooter: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 18) {
+            HStack(spacing: CameraCaptureChromeLayout.captureControlSpacing) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 21, weight: .semibold))
@@ -815,6 +816,7 @@ struct LensFooter: View {
                 )
             }
             .frame(height: CameraCaptureChromeLayout.captureControlsHeight)
+            .offset(x: CameraCaptureChromeLayout.captureControlsCenterOffset)
 
             Button(
                 action: {
@@ -877,23 +879,23 @@ struct MessageView: View {
     let showing: Bool
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(lensName)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Text(lensID)
-                    .font(.headline)
-                    .foregroundColor(.white)
-            }
-            .padding()
-            .background(Color(white: 0, opacity: 0.65))
-            .cornerRadius(4)
-            .opacity(showing ? 1 : 0)
-            .animation(.easeInOut, value: showing)
-            .padding()
-            Spacer()
+        VStack(spacing: 2) {
+            Text(lensName)
+                .font(.headline)
+                .foregroundColor(.white)
+            Text(lensID)
+                .font(.headline)
+                .foregroundColor(.white)
         }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(white: 0, opacity: 0.65))
+        .cornerRadius(4)
+        .opacity(showing ? 1 : 0)
+        .animation(.easeInOut, value: showing)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 16)
     }
 }
 

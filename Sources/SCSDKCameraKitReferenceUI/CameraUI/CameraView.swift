@@ -183,7 +183,7 @@ open class CameraView: UIView {
         stackView.axis = .horizontal
         stackView.alignment = .center
         stackView.distribution = .equalSpacing
-        stackView.spacing = 18.0
+        stackView.spacing = CameraCaptureChromeLayout.captureControlSpacing
         stackView.translatesAutoresizingMaskIntoConstraints = false
         return stackView
     }()
@@ -393,7 +393,10 @@ extension CameraView {
             photoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.photoButtonDiameter),
             videoCaptureButton.widthAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
             videoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
-            captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            captureControlsView.centerXAnchor.constraint(
+                equalTo: centerXAnchor,
+                constant: CameraCaptureChromeLayout.captureControlsCenterOffset
+            ),
             captureControlsView.bottomAnchor.constraint(
                 equalTo: bottomAnchor,
                 constant: -CameraCaptureChromeLayout.captureControlsBottomClearance
@@ -445,8 +448,12 @@ extension CameraView {
     private func setupMessageView() {
         addSubview(messageView)
         NSLayoutConstraint.activate([
-            messageView.topAnchor.constraint(equalTo: lensLabel.bottomAnchor, constant: 8.0),
-            messageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16.0),
+            messageView.topAnchor.constraint(
+                equalTo: safeAreaLayoutGuide.topAnchor,
+                constant: CameraCaptureChromeLayout.lensStatusTopClearance
+            ),
+            messageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            messageView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 16.0),
             messageView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
         ])
     }
