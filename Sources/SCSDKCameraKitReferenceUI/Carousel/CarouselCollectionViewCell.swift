@@ -42,6 +42,12 @@ public class CarouselCollectionViewCell: UICollectionViewCell {
         imageView.layer.cornerRadius = min(imageView.bounds.width, imageView.bounds.height) / 2
     }
 
+    override public func prepareForReuse() {
+        super.prepareForReuse()
+        imageView.image = nil
+        activityIndicatorView.stopAnimating()
+    }
+
     private func commonInit() {
         backgroundColor = .clear
         isAccessibilityElement = true

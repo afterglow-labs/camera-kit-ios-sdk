@@ -62,11 +62,22 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
             guard oldValue != orientation else { return }
             collectionViewLayout.scrollDirection = orientation.scrollDirection
             collectionView.contentInset = .zero
+            updateCollectionViewportConstraints()
             lastLaidOutBoundsSize = .zero
             invalidateIntrinsicContentSize()
             setNeedsLayout()
             collectionViewLayout.invalidateLayout()
             selectItem(selectedItem, animated: false)
+        }
+    }
+
+    /// Maximum number of Lens slots simultaneously visible in the carousel viewport.
+    public var maximumVisibleItemCount = 5 {
+        didSet {
+            guard oldValue != maximumVisibleItemCount else { return }
+            updateCollectionViewportConstraints()
+            lastLaidOutBoundsSize = .zero
+            setNeedsLayout()
         }
     }
 
@@ -77,9 +88,10 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     private var storedItems = [CarouselItem]()
 
     private var lastLaidOutBoundsSize: CGSize = .zero
+    private var collectionViewportConstraints: [NSLayoutConstraint] = []
 
     /// Image loader instance used to load each item icon.
-    private let imageLoader = DefaultCarouselImageLoader()
+    private let imageLoader: CarouselImageLoader
 
     // MARK: Views
 
@@ -149,12 +161,20 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     // MARK: Init
 
     override init(frame: CGRect) {
+        imageLoader = DefaultCarouselImageLoader()
         super.init(frame: frame)
         commonInit()
     }
 
     required init?(coder: NSCoder) {
+        imageLoader = DefaultCarouselImageLoader()
         super.init(coder: coder)
+        commonInit()
+    }
+
+    init(imageLoader: CarouselImageLoader) {
+        self.imageLoader = imageLoader
+        super.init(frame: .zero)
         commonInit()
     }
 
@@ -167,11 +187,43 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     private func setupCollectionView() {
         addSubview(collectionView)
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: topAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            collectionView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            collectionView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            collectionView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor),
+            collectionView.heightAnchor.constraint(lessThanOrEqualTo: heightAnchor),
         ])
+        updateCollectionViewportConstraints()
+    }
+
+    private func updateCollectionViewportConstraints() {
+        NSLayoutConstraint.deactivate(collectionViewportConstraints)
+
+        let visibleCount = CGFloat(max(1, maximumVisibleItemCount))
+        let spacing = CGFloat(max(0, maximumVisibleItemCount - 1)) * collectionViewLayout.minimumLineSpacing
+        let preferredViewportConstraint: NSLayoutConstraint
+        switch orientation {
+        case .horizontal:
+            collectionViewportConstraints = [
+                collectionView.heightAnchor.constraint(equalTo: heightAnchor),
+            ]
+            preferredViewportConstraint = collectionView.widthAnchor.constraint(
+                equalTo: heightAnchor,
+                multiplier: visibleCount,
+                constant: spacing
+            )
+        case .vertical:
+            collectionViewportConstraints = [
+                collectionView.widthAnchor.constraint(equalTo: widthAnchor),
+            ]
+            preferredViewportConstraint = collectionView.heightAnchor.constraint(
+                equalTo: widthAnchor,
+                multiplier: visibleCount,
+                constant: spacing
+            )
+        }
+        preferredViewportConstraint.priority = .defaultHigh
+        collectionViewportConstraints.append(preferredViewportConstraint)
+        NSLayoutConstraint.activate(collectionViewportConstraints)
     }
 
     private func setupFacadeSelectionRingView() {
@@ -346,6 +398,10 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     public func collectionView(
         _ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath
     ) {
+        if let cell = cell as? CarouselCollectionViewCell {
+            cell.imageView.image = nil
+            cell.activityIndicatorView.stopAnimating()
+        }
         guard
             indexPath.item < items.count,
             let url = items[indexPath.item].imageUrl
@@ -444,8 +500,6 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
                 // since carousel data can be reloaded in that time
                 return
             }
-            strongSelf.items[indexPath.item].image = image
-
             guard let cell = strongSelf.collectionView.cellForItem(at: indexPath) as? CarouselCollectionViewCell else {
                 return
             }
@@ -480,9 +534,9 @@ public class CarouselView: UIView, UICollectionViewDataSource, UICollectionViewD
     private var primaryBoundsLength: CGFloat {
         switch orientation {
         case .horizontal:
-            return bounds.width
+            return collectionView.bounds.width
         case .vertical:
-            return bounds.height
+            return collectionView.bounds.height
         }
     }
 
