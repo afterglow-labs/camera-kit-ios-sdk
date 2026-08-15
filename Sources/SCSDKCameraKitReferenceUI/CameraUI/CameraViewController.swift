@@ -176,9 +176,13 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
                 DispatchQueue.main.async {
                     strongSelf.hideAllHints()
-                    strongSelf.showMessage(lens: lens)
-                    strongSelf.cameraView.cameraBottomBar.closeButton.isHidden = false
-                    strongSelf.cameraView.lensLabel.text = lens.name ?? lens.id
+                    if strongSelf.cameraController.pinnedBaseLens == nil {
+                        strongSelf.showMessage(lens: lens)
+                    } else {
+                        let message = strongSelf.cameraController.lensDisplayName
+                        strongSelf.cameraView.showMessage(text: message, numberOfLines: 1)
+                    }
+                    strongSelf.updateLensStackPresentation()
                 }
             }
         }
@@ -188,8 +192,6 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     open func clearLens() {
         cameraView.activityIndicator.stopAnimating() // stop any loading indicator that may still be going on from current lens
         cameraController.clearLens(completion: nil)
-        cameraView.cameraBottomBar.closeButton.isHidden = true
-        cameraView.lensLabel.text = ""
     }
 
     // MARK: CameraControllerUIDelegate
@@ -201,6 +203,10 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         if !(selectedItem is EmptyItem) {
             cameraView.carouselView.selectItem(selectedItem)
         }
+    }
+
+    open func cameraControllerLensStackDidChange(_ controller: CameraController) {
+        updateLensStackPresentation()
     }
 
     open func cameraControllerRequestedActivityIndicatorShow(_ controller: CameraController) {
@@ -275,7 +281,9 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     open func cameraController(
         _ controller: CameraController, requestedHintDisplay hint: String, for lens: Lens, autohide: Bool
     ) {
-        guard lens.id == cameraController.currentLens?.id else { return }
+        guard cameraController.appliedLenses.contains(where: {
+            $0.id == lens.id && $0.groupId == lens.groupId
+        }) else { return }
 
         cameraView.hintLabel.text = hint
         cameraView.hintLabel.layer.removeAllAnimations()
@@ -599,11 +607,31 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
                         groupId: lens.groupId,
                         imageUrl: lens.iconUrl,
                         contextMenuProvider: { [weak self] in
-                            self?.lensContextMenuProvider?(lens)
+                            guard let self else { return nil }
+                            return LensLayerContextMenu.make(
+                                for: lens,
+                                controller: self.cameraController,
+                                supplemental: self.lensContextMenuProvider?(lens)
+                            )
                         }
                     )
                 }
             }
+    }
+}
+
+private extension CameraViewController {
+    func updateLensStackPresentation() {
+        cameraView.lensLabel.text = cameraController.lensDisplayName
+        cameraView.cameraBottomBar.closeButton.isHidden = cameraController.appliedLenses.isEmpty
+
+        if let currentLens = cameraController.currentLens {
+            cameraView.carouselView.selectItem(
+                CarouselItem(lensId: currentLens.id, groupId: currentLens.groupId)
+            )
+        } else {
+            cameraView.carouselView.selectItem(EmptyItem())
+        }
     }
 }
 

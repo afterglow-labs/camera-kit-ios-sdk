@@ -89,8 +89,8 @@ public struct CameraView: View {
             if captureChromeVisible {
                 VStack {
                     MessageView(
-                        lensName: state.selectedLens?.name ?? "",
-                        lensID: state.selectedLens?.id ?? "",
+                        lensName: state.activeLensDisplayName,
+                        lensID: state.activeLensDisplayID,
                         showing: state.showingMessage
                     )
                     .padding(.top, CameraCaptureChromeLayout.lensStatusTopClearance)
@@ -112,6 +112,7 @@ public struct CameraView: View {
                         availableLenses: $state.lenses,
                         selectedLens: $state.selectedLens,
                         orientation: .vertical,
+                        cameraController: cameraController,
                         lensContextMenuProvider: lensContextMenuProvider
                     )
                     .frame(width: 62)

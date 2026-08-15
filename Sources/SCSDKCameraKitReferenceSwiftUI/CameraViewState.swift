@@ -11,6 +11,7 @@ public class CameraViewState: NSObject, ObservableObject {
     private var cancelleables: Set<AnyCancellable> = []
     private var hideMessage: DispatchWorkItem?
     private weak var configuredCameraController: CameraController?
+    private var synchronizingSelection = false
 
     weak var cameraController: CameraController! {
         didSet {
@@ -18,17 +19,13 @@ public class CameraViewState: NSObject, ObservableObject {
             cancelleables.removeAll()
             controller.uiDelegate = self
             $selectedLens
-                .sink { [weak self] lens in
+                .sink { [weak self, weak controller] lens in
+                    guard let self, let controller, !self.synchronizingSelection else { return }
                     if let lens {
                         controller.applyLens(lens)
-                        self?.showingMessage = true
-                        self?.hideMessage?.cancel()
-                        let hideMessage = DispatchWorkItem(block: { self?.showingMessage = false })
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: hideMessage)
-                        self?.hideMessage = hideMessage
                     } else {
                         controller.clearLens()
-                        self?.showingMessage = false
+                        self.showingMessage = false
                     }
                 }.store(in: &cancelleables)
         }
@@ -39,6 +36,12 @@ public class CameraViewState: NSObject, ObservableObject {
 
     /// The selected lens, if one is selected
     @Published var selectedLens: Lens?
+
+    /// User-facing name of the confirmed active Lens stack.
+    @Published var activeLensDisplayName = ""
+
+    /// Stable IDs of the confirmed active Lens stack.
+    @Published var activeLensDisplayID = ""
 
     /// Whether a lens is being loaded or not
     @Published var loading = false
@@ -166,6 +169,26 @@ extension CameraViewState: CameraControllerUIDelegate {
 
     public func cameraController(_ controller: CameraController, updatedLenses lenses: [Lens]) {
         self.lenses = lenses
+    }
+
+    public func cameraControllerLensStackDidChange(_ controller: CameraController) {
+        synchronizingSelection = true
+        selectedLens = controller.currentLens
+        activeLensDisplayName = controller.lensDisplayName
+        activeLensDisplayID = controller.appliedLenses.map(\.id).joined(separator: " + ")
+        synchronizingSelection = false
+
+        hideMessage?.cancel()
+        guard controller.currentLens != nil else {
+            showingMessage = false
+            return
+        }
+        showingMessage = true
+        let hideMessage = DispatchWorkItem { [weak self] in
+            self?.showingMessage = false
+        }
+        self.hideMessage = hideMessage
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: hideMessage)
     }
 
     public func cameraController(

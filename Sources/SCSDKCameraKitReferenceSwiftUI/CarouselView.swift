@@ -14,17 +14,20 @@ public struct CarouselView: UIViewRepresentable {
     @Binding var selectedLens: Lens?
 
     let orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation
+    let cameraController: CameraController
     let lensContextMenuProvider: ((Lens) -> UIMenu?)?
 
     public init(
         availableLenses: Binding<[Lens]>,
         selectedLens: Binding<Lens?>,
         orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation = .horizontal,
+        cameraController: CameraController,
         lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil
     ) {
         self._availableLenses = availableLenses
         self._selectedLens = selectedLens
         self.orientation = orientation
+        self.cameraController = cameraController
         self.lensContextMenuProvider = lensContextMenuProvider
     }
 
@@ -92,7 +95,12 @@ public extension CarouselView {
                 groupId: lens.groupId,
                 imageUrl: lens.iconUrl,
                 contextMenuProvider: { [weak self] in
-                    self?.parent.lensContextMenuProvider?(lens)
+                    guard let self else { return nil }
+                    return LensLayerContextMenu.make(
+                        for: lens,
+                        controller: self.parent.cameraController,
+                        supplemental: self.parent.lensContextMenuProvider?(lens)
+                    )
                 }
             )
         }
