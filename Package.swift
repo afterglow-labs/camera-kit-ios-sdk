@@ -52,7 +52,7 @@ let package = Package(
                 
         .target(
             name: "SCSDKCameraKitReferenceUI",
-            dependencies: ["SCSDKCameraKit"],
+            dependencies: ["SCSDKCameraKit", "SCSDKCameraKitCompositeLensRuntime"],
             path: "Sources/SCSDKCameraKitReferenceUI",
             resources: [
                 .process("Resources/Reference.xcassets"),
@@ -60,6 +60,11 @@ let package = Package(
             ]
         ),
         .target(name: "SCSDKCameraKitReferenceSwiftUI", dependencies: ["SCSDKCameraKitReferenceUI"], path: "Sources/SCSDKCameraKitReferenceSwiftUI"),
+        .target(
+            name: "SCSDKCameraKitCompositeLensRuntime",
+            path: "Sources/SCSDKCameraKitCompositeLensRuntime",
+            publicHeadersPath: "include"
+        ),
         .target(
             name: "SCSDKCameraKitLocalLensRuntime",
             dependencies: ["SCSDKCameraKit"],
@@ -80,6 +85,11 @@ let package = Package(
             name: "SCSDKCameraKitLocalLensRuntimeTests",
             dependencies: ["SCSDKCameraKitLocalLensRuntime"],
             path: "Tests/SCSDKCameraKitLocalLensRuntimeTests"
+        ),
+        .testTarget(
+            name: "SCSDKCameraKitCompositeLensRuntimeTests",
+            dependencies: ["SCSDKCameraKitCompositeLensRuntime"],
+            path: "Tests/SCSDKCameraKitCompositeLensRuntimeTests"
         )
     ]
 )
