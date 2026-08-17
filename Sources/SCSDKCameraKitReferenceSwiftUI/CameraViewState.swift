@@ -79,6 +79,9 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Current Camera Kit portrait blur. Zero means disabled.
     @Published var portraitBlur: Double = 0
 
+    /// Whether Camera Kit's high-definition Lens rendering path is requested.
+    @Published var highDefinitionRenderingEnabled = false
+
     /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
     @Published var chromeHidden = false
 
@@ -222,6 +225,7 @@ extension CameraViewState: CameraControllerUIDelegate {
         ringLightColor = controller.ringLightColor
         toneMapAmount = controller.toneMapAdjustmentAmount
         portraitBlur = controller.portraitAdjustmentBlur
+        highDefinitionRenderingEnabled = controller.isHighDefinitionLensRenderingEnabled
     }
 
     public func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {

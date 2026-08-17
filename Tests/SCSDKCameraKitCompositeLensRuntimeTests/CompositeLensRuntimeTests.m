@@ -19,6 +19,37 @@
 
 @end
 
+@interface AGFakeVideoProcessingComponent : NSObject
+@property(nonatomic) NSInteger renderingWidth;
+@property(nonatomic) NSInteger renderingHeight;
+@end
+
+@implementation AGFakeVideoProcessingComponent
+
+- (void)setYuvRenderingResolutionWidth:(NSInteger)width height:(NSInteger)height
+{
+    self.renderingWidth = width;
+    self.renderingHeight = height;
+}
+
+@end
+
+@interface AGFakeComponentManager : NSObject
+@property(nonatomic, strong) AGFakeVideoProcessingComponent *videoProcessingComponent;
+@end
+
+@implementation AGFakeComponentManager
+@end
+
+@interface AGFakeHighDefinitionProcessor : NSObject {
+@public
+    AGFakeComponentManager *_componentManager;
+}
+@end
+
+@implementation AGFakeHighDefinitionProcessor
+@end
+
 @interface CompositeLensRuntimeTests : XCTestCase
 @end
 
@@ -72,6 +103,29 @@
     XCTAssertNil(processor.receivedLenses);
     XCTAssertNil(processor.receivedLaunchData);
     XCTAssertEqual(completionCount, 1u);
+}
+
+- (void)testHighDefinitionRenderingRequestReachesLensVideoProcessor
+{
+    AGFakeVideoProcessingComponent *videoProcessor = [AGFakeVideoProcessingComponent new];
+    AGFakeComponentManager *componentManager = [AGFakeComponentManager new];
+    componentManager.videoProcessingComponent = videoProcessor;
+    AGFakeHighDefinitionProcessor *processor = [AGFakeHighDefinitionProcessor new];
+    processor->_componentManager = componentManager;
+
+    XCTAssertTrue(SCCameraKitProcessorSupportsHighDefinitionRendering(processor));
+    XCTAssertTrue(SCCameraKitSetHighDefinitionRenderingResolution(processor, 1920, 1080));
+    XCTAssertEqual(videoProcessor.renderingWidth, 1920);
+    XCTAssertEqual(videoProcessor.renderingHeight, 1080);
+}
+
+- (void)testHighDefinitionRenderingRejectsMissingRuntimeAndInvalidSize
+{
+    XCTAssertFalse(SCCameraKitProcessorSupportsHighDefinitionRendering([NSObject new]));
+    XCTAssertFalse(SCCameraKitSetHighDefinitionRenderingResolution([NSObject new], 1920, 1080));
+
+    AGFakeHighDefinitionProcessor *processor = [AGFakeHighDefinitionProcessor new];
+    XCTAssertFalse(SCCameraKitSetHighDefinitionRenderingResolution(processor, 0, 1080));
 }
 
 @end

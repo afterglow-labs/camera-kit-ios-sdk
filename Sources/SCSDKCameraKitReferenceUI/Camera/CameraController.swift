@@ -131,6 +131,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private let recordingResolutionOutput = RecordingResolutionOutput()
     private var recordingResolutionOutputAttached = false
 
+    /// Whether the caller has requested Camera Kit's native high-definition Lens rendering path.
+    public private(set) var isHighDefinitionLensRenderingEnabled = false
+
+    /// Whether the native runtime currently has a high-definition rendering override applied.
+    public private(set) var isHighDefinitionLensRenderingActive = false
+
     /// An output used for live web preview streaming.
     public private(set) var streamOutput: CameraKitWebSocketStreamOutput?
 
@@ -177,6 +183,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Whether the current Camera Kit processor exposes its native composite-Lens entry point.
     public var supportsCompositeLenses: Bool {
         SCCameraKitProcessorSupportsCompositeLenses(cameraKit.lenses.processor)
+    }
+
+    /// Whether this Camera Kit runtime exposes its native high-definition YUV rendering path.
+    public var supportsHighDefinitionLensRendering: Bool {
+        SCCameraKitProcessorSupportsHighDefinitionRendering(cameraKit.lenses.processor)
     }
 
     /// List of lens repository groups to observe/show in carousel
@@ -343,6 +354,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 self.recorder = nil
             }
             deactivateRecordingResolutionOutput()
+            clearHighDefinitionLensRenderingOverride()
             if let photoCaptureOutput {
                 cameraKit.remove(output: photoCaptureOutput)
                 self.photoCaptureOutput = nil
@@ -393,6 +405,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
          let arInput = ARSessionInput(session: ARSession(), frontCameraConfiguration: config)
           */
 
+        do {
+            try CameraKitAudioSession.activateForCameraRecording()
+        } catch {
+            print("[CameraKit Audio] Could not activate the video-recording audio session: \(error.localizedDescription)")
+        }
+
         let dataProvider = configureDataProvider()
         // Create CameraKit inputs off the main thread. AVSessionInput may touch AVCaptureSession internals
         // during initialization, and AVCaptureSession startRunning must not happen on the main thread.
@@ -420,6 +438,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         applyPreferredExposureTargetBias()
         applyPreferredWhiteBalanceAdjustment()
         DispatchQueue.main.async { [weak self] in
+            self?.refreshHighDefinitionLensRendering()
             self?.applyPreferredToneMapAdjustment()
             self?.applyPreferredPortraitAdjustment()
         }
@@ -661,18 +680,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     
     /// Configures the recorder to be ready to record a new video.
     open func configureRecorder() {
+        configureRecorder(using: resolvedRecordingSetup().configuration)
+    }
+
+    private func configureRecorder(using configuration: RecordingConfiguration) {
         if let old = recorder {
             old.finishRecording(completion: nil)
             cameraKit.remove(output: old.output)
         }
-        let configuration = recordingConfiguration ?? RecordingConfiguration(
-            outputSize: OutputSizeHelper.normalizedSize(
-                for: cameraKit.activeInput.frameSize,
-                aspectRatio: resolvedCaptureAspectRatio,
-                orientation: cameraKit.activeInput.frameOrientation
-            ),
-            framesPerSecond: 30
-        )
 
         do {
             recorder = try Recorder(
@@ -706,8 +721,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
 
         uiDelegate?.cameraControllerRequestedSnapAttributionViewHide(self)
-        activateRecordingResolutionOutput()
-        configureRecorder()
+        let setup = resolvedRecordingSetup()
+        activateRecordingResolutionOutput(using: setup)
+        configureRecorder(using: setup.configuration)
         guard let recorder else {
             deactivateRecordingResolutionOutput()
             return
@@ -753,20 +769,96 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         uiDelegate?.cameraControllerRequestedSnapAttributionViewShow(self)
     }
 
-    private func activateRecordingResolutionOutput() {
-        guard let recordingConfiguration else { return }
+    private typealias RecordingSetup = (
+        configuration: RecordingConfiguration,
+        inputSize: CGSize,
+        lensActive: Bool
+    )
+
+    private func resolvedRecordingSetup() -> RecordingSetup {
+        let configured = recordingConfiguration ?? RecordingConfiguration(
+            outputSize: cameraKit.activeInput.frameSize,
+            framesPerSecond: 30
+        )
+        let inputSize = cameraKit.activeInput.frameSize
+        let sourceSize = inputSize == .zero ? configured.outputSize : inputSize
+        let lensActive = !appliedLenses.isEmpty
+        let outputSize = LensRenderingResolution.fullResolution(for: sourceSize)
+        let videoCodec = resolvedRecordingVideoCodec()
+        return (
+            configuration: configured
+                .replacingOutputSize(outputSize)
+                .replacingVideoCodec(videoCodec),
+            inputSize: inputSize,
+            lensActive: lensActive
+        )
+    }
+
+    private func resolvedRecordingVideoCodec() -> AVVideoCodecType {
+        guard let videoOutput = captureSession.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else {
+            let codec = RecordingVideoCodecResolver.resolve(recommendedSettings: nil, availableCodecs: [])
+            print("[CameraKit Recorder] no active video data output; falling back to \(codec.rawValue)")
+            return codec
+        }
+
+        let recommendedSettings = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: .mp4)
+        let availableCodecs = videoOutput.availableVideoCodecTypesForAssetWriter(writingTo: .mp4)
+        let codec = RecordingVideoCodecResolver.resolve(
+            recommendedSettings: recommendedSettings,
+            availableCodecs: availableCodecs
+        )
+        print("[CameraKit Recorder] camera-default codec=\(codec.rawValue)")
+        return codec
+    }
+
+    private func activateRecordingResolutionOutput(using setup: RecordingSetup) {
+        refreshHighDefinitionLensRendering()
+        recordingResolutionOutput.setOutputResolution(setup.configuration.outputSize)
         if !recordingResolutionOutputAttached {
             cameraKit.add(output: recordingResolutionOutput)
             recordingResolutionOutputAttached = true
         }
-        recordingResolutionOutput.setOutputResolution(recordingConfiguration.outputSize)
+        print(
+            "[CameraKit Recorder] render input=\(Int(setup.inputSize.width))x\(Int(setup.inputSize.height)) "
+                + "lensActive=\(setup.lensActive) "
+                + "output=\(Int(setup.configuration.outputSize.width))x\(Int(setup.configuration.outputSize.height)) "
+                + "codec=\(setup.configuration.videoCodec.rawValue) "
+                + "hdRequested=\(isHighDefinitionLensRenderingEnabled) "
+                + "hdRuntime=\(isHighDefinitionLensRenderingActive)"
+        )
     }
 
     private func deactivateRecordingResolutionOutput() {
-        guard recordingResolutionOutputAttached else { return }
-        recordingResolutionOutput.setOutputResolution(.zero)
-        cameraKit.remove(output: recordingResolutionOutput)
-        recordingResolutionOutputAttached = false
+        if recordingResolutionOutputAttached {
+            cameraKit.remove(output: recordingResolutionOutput)
+            recordingResolutionOutputAttached = false
+            recordingResolutionOutput.setOutputResolution(.zero)
+        }
+    }
+
+    private func refreshHighDefinitionLensRendering() {
+        let sourceSize = recordingConfiguration?.outputSize ?? cameraKit.activeInput.frameSize
+        let lensActive = !appliedLenses.isEmpty
+        guard let outputSize = HighDefinitionLensRenderingPolicy.overrideSize(
+            enabled: isHighDefinitionLensRenderingEnabled,
+            lensActive: lensActive,
+            sourceSize: sourceSize
+        ) else {
+            clearHighDefinitionLensRenderingOverride()
+            return
+        }
+
+        isHighDefinitionLensRenderingActive = SCCameraKitSetHighDefinitionRenderingResolution(
+            cameraKit.lenses.processor,
+            Int(outputSize.width),
+            Int(outputSize.height)
+        )
+    }
+
+    private func clearHighDefinitionLensRenderingOverride() {
+        guard isHighDefinitionLensRenderingActive else { return }
+        _ = SCCameraKitSetHighDefinitionRenderingResolution(cameraKit.lenses.processor, 0, 0)
+        isHighDefinitionLensRenderingActive = false
     }
 
     // MARK: Live Streaming
@@ -824,11 +916,27 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             outputSize: outputSize,
             framesPerSecond: framesPerSecond
         )
+        refreshHighDefinitionLensRendering()
     }
 
     /// Refreshes Camera Kit's cached input dimensions after the host changes AVCaptureDevice.activeFormat.
     open func refreshActiveInputAttributes() {
         cameraKit.activeInput.setVideoOrientation(configuredOrientation)
+        refreshHighDefinitionLensRendering()
+    }
+
+    /// Enables or disables Camera Kit's native high-definition Lens rendering override.
+    ///
+    /// The runtime override is applied only while at least one Lens is active.
+    open func setHighDefinitionLensRenderingEnabled(_ enabled: Bool) {
+        guard isHighDefinitionLensRenderingEnabled != enabled else {
+            refreshHighDefinitionLensRendering()
+            return
+        }
+
+        isHighDefinitionLensRenderingEnabled = enabled
+        refreshHighDefinitionLensRendering()
+        notifyControlsDidChange()
     }
     
     public func warmupLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {
@@ -1405,6 +1513,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private func publishLensStackDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.refreshHighDefinitionLensRendering()
             self.uiDelegate?.cameraControllerLensStackDidChange(self)
         }
     }

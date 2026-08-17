@@ -283,7 +283,7 @@ extension CameraView {
         backgroundColor = .black
         addSubview(previewView)
         previewView.frame = bounds
-        previewView.contentMode = .aspectFill
+        previewView.contentMode = .aspectFit
     }
 
     private var resolvedPreviewFrame: CGRect {

@@ -235,6 +235,8 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         cameraView.flashControlView.ringLightColorSelectionView.selectColor(controller.ringLightColor)
 
         cameraView.cameraActionsView.flashActionView.toggleButton.isSelected = controller.flashState != .off
+        cameraView.cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
+            controller.isHighDefinitionLensRenderingEnabled
         syncAdjustment(
             cameraView.cameraActionsView.toneMapActionView,
             control: cameraView.toneMapControlView,
@@ -374,6 +376,7 @@ private extension CameraViewController {
         setupFlashButtons()
         setupToneMapAdjustmentButtons()
         setupPortraitAdjustmentButtons()
+        setupHighDefinitionRenderingButton()
 
         cameraView.carouselView.delegate = self
         cameraView.carouselView.dataSource = self
@@ -386,6 +389,22 @@ private extension CameraViewController {
         cameraView.portraitControlView.delegate = cameraController
 
         cameraView.flashControlView.delegate = self
+    }
+}
+
+// MARK: High-Definition Lens Rendering
+
+extension CameraViewController {
+    private func setupHighDefinitionRenderingButton() {
+        let action = cameraView.cameraActionsView.highDefinitionActionView
+        action.isHidden = !cameraController.supportsHighDefinitionLensRendering
+        action.toggleButton.isSelected = cameraController.isHighDefinitionLensRenderingEnabled
+        action.enableAction = { [weak cameraController] in
+            cameraController?.setHighDefinitionLensRenderingEnabled(true)
+        }
+        action.disableAction = { [weak cameraController] in
+            cameraController?.setHighDefinitionLensRenderingEnabled(false)
+        }
     }
 }
 
@@ -488,6 +507,8 @@ extension CameraViewController: AdjustmentsProcessorObserver {
     func updateAdjustmentButtonStatus() {
         cameraView.cameraActionsView.toneMapActionView.isHidden = !cameraController.isToneMapAdjustmentAvailable
         cameraView.cameraActionsView.portraitActionView.isHidden = !cameraController.isPortraitAdjustmentAvailable
+        cameraView.cameraActionsView.highDefinitionActionView.isHidden =
+            !cameraController.supportsHighDefinitionLensRendering
     }
 }
 

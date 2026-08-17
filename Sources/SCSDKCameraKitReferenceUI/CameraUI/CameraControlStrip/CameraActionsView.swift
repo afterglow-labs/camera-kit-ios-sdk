@@ -118,15 +118,30 @@ public class CameraActionsView: UIView {
         return view
     }()
 
+    /// Button to enable or disable Camera Kit's native high-definition Lens rendering path.
+    public lazy var highDefinitionActionView: CameraConfigurableActionView = {
+        let view = CameraConfigurableActionView()
+        view.configurable = false
+        view.toggleButton.accessibilityIdentifier = CameraElements.highDefinitionToggleButton.id
+        view.toggleButton.accessibilityLabel = CameraKitLocalizedString(
+            key: "camera_kit_high_definition_rendering_toggle_button",
+            comment: ""
+        )
+        view.toggleButton.setImage(Self.highDefinitionButtonImage(selected: false), for: .normal)
+        view.toggleButton.setImage(Self.highDefinitionButtonImage(selected: true), for: .selected)
+        return view
+    }()
+
     /// Stack view used to arrange the view's buttons.
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            flipCameraButton, flashActionView, toneMapActionView, portraitActionView,
+            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
         stackView.setCustomSpacing(6, after: flashActionView)
         stackView.setCustomSpacing(6, after: toneMapActionView)
+        stackView.setCustomSpacing(6, after: portraitActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         return stackView
@@ -174,6 +189,30 @@ public class CameraActionsView: UIView {
         super.layoutSubviews()
         for button in buttonStackView.arrangedSubviews.compactMap({ $0 as? UIButton }) {
             button.applyCameraActionButtonShadow()
+        }
+    }
+
+    private static func highDefinitionButtonImage(selected: Bool) -> UIImage {
+        let size = CGSize(width: 40, height: 40)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            if selected {
+                UIColor.white.setFill()
+                UIBezierPath(ovalIn: CGRect(origin: .zero, size: size)).fill()
+            }
+
+            let text = "HD" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 13, weight: .bold),
+                .foregroundColor: selected ? UIColor.black : UIColor.white,
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            text.draw(
+                at: CGPoint(
+                    x: (size.width - textSize.width) / 2,
+                    y: (size.height - textSize.height) / 2
+                ),
+                withAttributes: attributes
+            )
         }
     }
 }

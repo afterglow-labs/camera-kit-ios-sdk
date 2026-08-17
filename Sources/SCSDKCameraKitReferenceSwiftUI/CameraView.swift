@@ -442,7 +442,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
-            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
+            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
+            highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         view.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
         return view
@@ -451,7 +452,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
-            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable
+            portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
+            highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
         uiView.syncControlState(with: cameraController)
@@ -590,6 +592,13 @@ private final class InclusiveCameraControlsView: UIView {
             cameraController?.disablePortraitAdjustment()
         }
 
+        cameraActionsView.highDefinitionActionView.enableAction = { [weak cameraController] in
+            cameraController?.setHighDefinitionLensRenderingEnabled(true)
+        }
+        cameraActionsView.highDefinitionActionView.disableAction = { [weak cameraController] in
+            cameraController?.setHighDefinitionLensRenderingEnabled(false)
+        }
+
         configureControlVisibilityCallbacks()
         updateFlashToggle(for: cameraController.cameraPosition)
         syncControlState(with: cameraController)
@@ -599,6 +608,8 @@ private final class InclusiveCameraControlsView: UIView {
         flashControlView.ringLightIntensityValue = Float(cameraController.ringLightIntensity)
         flashControlView.ringLightColorSelectionView.selectColor(cameraController.ringLightColor)
         cameraActionsView.flashActionView.toggleButton.isSelected = cameraController.flashState != .off
+        cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
+            cameraController.isHighDefinitionLensRenderingEnabled
         syncAdjustment(
             cameraActionsView.toneMapActionView,
             control: toneMapControlView,
@@ -631,9 +642,10 @@ private final class InclusiveCameraControlsView: UIView {
         }
     }
 
-    func updateAdjustmentAvailability(tone: Bool, portrait: Bool) {
+    func updateAdjustmentAvailability(tone: Bool, portrait: Bool, highDefinition: Bool) {
         cameraActionsView.toneMapActionView.isHidden = !tone
         cameraActionsView.portraitActionView.isHidden = !portrait
+        cameraActionsView.highDefinitionActionView.isHidden = !highDefinition
         if !tone {
             toneMapControlView.isHidden = true
             toneMapControlDismissalHint.isHidden = true

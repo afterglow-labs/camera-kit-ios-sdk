@@ -26,6 +26,7 @@ public struct PreviewView: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> SafeAreaPreviewView {
         let inner = SafeAreaPreviewView()
+        inner.contentMode = .aspectFit
         inner.automaticallyConfiguresTouchHandler = automaticallyConfiguresTouchHandler
         inner.bottomSafeAreaInset = bottomSafeAreaInset
         cameraKit.add(output: inner)
@@ -37,6 +38,7 @@ public struct PreviewView: UIViewRepresentable {
     }
 
     public func updateUIView(_ uiView: SafeAreaPreviewView, context: Context) {
+        uiView.contentMode = .aspectFit
         uiView.bottomSafeAreaInset = bottomSafeAreaInset
     }
 
