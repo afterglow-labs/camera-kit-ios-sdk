@@ -82,6 +82,14 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Whether Camera Kit's high-definition Lens rendering path is requested.
     @Published var highDefinitionRenderingEnabled = false
 
+    /// Whether the host supplied a dedicated Retouch Lens and whether it is requested.
+    @Published var retouchAvailable = false
+    @Published var retouchEnabled = false
+
+    /// Whether the host supplied a dedicated Rhinoplasty Lens and whether it is requested.
+    @Published var rhinoplastyAvailable = false
+    @Published var rhinoplastyEnabled = false
+
     /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
     @Published var chromeHidden = false
 
@@ -226,6 +234,10 @@ extension CameraViewState: CameraControllerUIDelegate {
         toneMapAmount = controller.toneMapAdjustmentAmount
         portraitBlur = controller.portraitAdjustmentBlur
         highDefinitionRenderingEnabled = controller.isHighDefinitionLensRenderingEnabled
+        retouchAvailable = controller.isRetouchAvailable
+        retouchEnabled = controller.isRetouchEnabled
+        rhinoplastyAvailable = controller.isRhinoplastyAvailable
+        rhinoplastyEnabled = controller.isRhinoplastyEnabled
     }
 
     public func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {

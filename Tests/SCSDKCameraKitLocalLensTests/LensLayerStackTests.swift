@@ -2,6 +2,25 @@ import XCTest
 @testable import SCSDKCameraKitReferenceUI
 
 final class LensLayerStackTests: XCTestCase {
+    func testPersistentControlsStackWithPinnedBaseAndSelectedTop() {
+        var stack = LensLayerStack<String>()
+
+        stack.setPersistentBases(["retouch", "rhinoplasty"])
+        stack.select("face-sculpt", matches: ==)
+        XCTAssertTrue(stack.pinCurrent())
+        stack.select("comic", matches: ==)
+
+        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty", "face-sculpt", "comic"])
+        XCTAssertEqual(stack.current, "comic")
+
+        stack.clearTop()
+        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty", "face-sculpt"])
+
+        stack.unpin()
+        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty"])
+        XCTAssertNil(stack.current)
+    }
+
     func testPinApplyReplaceClearAndUnpinTransitions() {
         var stack = LensLayerStack<String>()
 
@@ -82,14 +101,16 @@ final class LensLayerStackTests: XCTestCase {
         XCTAssertFalse(stack.pinCurrent())
     }
 
-    func testResetClearsBothLayers() {
+    func testResetClearsEveryLayer() {
         var stack = LensLayerStack<String>()
 
+        stack.setPersistentBases(["persistent-retouch", "persistent-rhinoplasty"])
         stack.select("retouch", matches: ==)
         XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
         stack.reset()
 
+        XCTAssertTrue(stack.persistentBases.isEmpty)
         XCTAssertNil(stack.pinnedBase)
         XCTAssertNil(stack.selectedTop)
         XCTAssertTrue(stack.applied.isEmpty)

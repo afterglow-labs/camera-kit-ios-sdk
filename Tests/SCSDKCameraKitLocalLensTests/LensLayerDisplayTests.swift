@@ -3,6 +3,22 @@ import XCTest
 
 final class LensLayerDisplayTests: XCTestCase {
     func testLayerDisplayNamesDescribeTheAppliedStack() {
+        XCTAssertEqual(
+            LensLayerDisplay.name(
+                persistentBases: ["Retouch", "Rhinoplasty"],
+                base: "Face Sculpt",
+                top: "Comic"
+            ),
+            "Retouch + Rhinoplasty + Face Sculpt + Comic"
+        )
+        XCTAssertEqual(
+            LensLayerDisplay.name(persistentBases: ["Retouch", "Rhinoplasty"], base: nil, top: "Comic"),
+            "Retouch + Rhinoplasty + Comic"
+        )
+        XCTAssertEqual(
+            LensLayerDisplay.name(persistentBases: ["Retouch", "Rhinoplasty"], base: nil, top: nil),
+            "Retouch + Rhinoplasty"
+        )
         XCTAssertEqual(LensLayerDisplay.name(base: "Retouch", top: nil), "Retouch (Pinned)")
         XCTAssertEqual(LensLayerDisplay.name(base: "Retouch", top: "Comic"), "Retouch + Comic")
         XCTAssertEqual(LensLayerDisplay.name(base: nil, top: "Comic"), "Comic")

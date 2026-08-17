@@ -1,4 +1,5 @@
 struct LensLayerStack<Element> {
+    private(set) var persistentBases: [Element] = []
     private(set) var pinnedBase: Element?
     private(set) var selectedTop: Element?
 
@@ -7,7 +8,11 @@ struct LensLayerStack<Element> {
     }
 
     var applied: [Element] {
-        [pinnedBase, selectedTop].compactMap { $0 }
+        persistentBases + [pinnedBase, selectedTop].compactMap { $0 }
+    }
+
+    mutating func setPersistentBases(_ elements: [Element]) {
+        persistentBases = elements
     }
 
     mutating func select(_ element: Element, matches: (Element, Element) -> Bool) {
@@ -36,6 +41,7 @@ struct LensLayerStack<Element> {
     }
 
     mutating func remove(where shouldRemove: (Element) -> Bool) {
+        persistentBases.removeAll(where: shouldRemove)
         if let pinnedBase, shouldRemove(pinnedBase) {
             self.pinnedBase = nil
         }
@@ -45,6 +51,7 @@ struct LensLayerStack<Element> {
     }
 
     mutating func reset() {
+        persistentBases.removeAll()
         pinnedBase = nil
         selectedTop = nil
     }
@@ -56,6 +63,13 @@ struct LensLayerIdentity: Equatable {
 }
 
 enum LensLayerDisplay {
+    static func name(persistentBases: [String], base: String?, top: String?) -> String {
+        let names = persistentBases + [base, top].compactMap { $0 }
+        guard !names.isEmpty else { return "" }
+        let pinnedSuffix = base != nil && top == nil ? " (Pinned)" : ""
+        return names.joined(separator: " + ") + pinnedSuffix
+    }
+
     static func name(base: String?, top: String?) -> String {
         switch (base, top) {
         case let (base?, top?):

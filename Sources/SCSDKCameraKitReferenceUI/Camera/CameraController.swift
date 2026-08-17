@@ -160,7 +160,41 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         readLensState { activeLensStack.pinnedBase }
     }
 
-    /// Confirmed active Lenses in Camera Kit application order: base, then top.
+    /// The confirmed persistent Retouch Lens, if one is active.
+    public var activeRetouchLens: Lens? {
+        readLensState {
+            activePersistentLens(matching: configuredRetouchLens)
+        }
+    }
+
+    /// Whether a dedicated Retouch Lens has been supplied by the host app.
+    public var isRetouchAvailable: Bool {
+        readLensState { configuredRetouchLens != nil }
+    }
+
+    /// Whether the dedicated Retouch layer is requested for this camera session.
+    public var isRetouchEnabled: Bool {
+        readLensState { retouchRequestedEnabled }
+    }
+
+    /// The confirmed persistent Rhinoplasty Lens, if one is active.
+    public var activeRhinoplastyLens: Lens? {
+        readLensState {
+            activePersistentLens(matching: configuredRhinoplastyLens)
+        }
+    }
+
+    /// Whether a dedicated Rhinoplasty Lens has been supplied by the host app.
+    public var isRhinoplastyAvailable: Bool {
+        readLensState { configuredRhinoplastyLens != nil }
+    }
+
+    /// Whether the dedicated Rhinoplasty layer is requested for this camera session.
+    public var isRhinoplastyEnabled: Bool {
+        readLensState { rhinoplastyRequestedEnabled }
+    }
+
+    /// Confirmed active Lenses in Camera Kit application order: permanent controls, pinned base, then top.
     public var appliedLenses: [Lens] {
         readLensState { activeLensStack.applied }
     }
@@ -174,10 +208,26 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public var lensDisplayName: String {
         readLensState {
             LensLayerDisplay.name(
+                persistentBases: activeLensStack.persistentBases.map(lensName),
                 base: activeLensStack.pinnedBase.map(lensName),
                 top: activeLensStack.selectedTop.map(lensName)
             )
         }
+    }
+
+    /// Lenses exposed to the reference carousel. The dedicated Retouch Lens is controlled separately.
+    public var carouselLenses: [Lens] {
+        let hiddenControlIdentities = readLensState {
+            [configuredRetouchLens, configuredRhinoplastyLens]
+                .compactMap { $0 }
+                .map { identity(for: $0) }
+        }
+        return groupIDs
+            .flatMap { cameraKit.lenses.repository.lenses(groupID: $0) }
+            .filter { lens in
+                let lensIdentity = identity(for: lens)
+                return !hiddenControlIdentities.contains(lensIdentity)
+            }
     }
 
     /// Whether the current Camera Kit processor exposes its native composite-Lens entry point.
@@ -364,6 +414,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 self.lensQueue.async {
                     self.desiredLensStack.reset()
                     self.activeLensStack.reset()
+                    self.configuredRetouchLens = nil
+                    self.retouchRequestedEnabled = false
+                    self.configuredRhinoplastyLens = nil
+                    self.rhinoplastyRequestedEnabled = false
                     DispatchQueue.main.async {
                         self.uiDelegate?.cameraControllerLensStackDidChange(self)
                         self.uiDelegate = nil
@@ -435,6 +489,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         // because the CameraKit input and session configures the capture session implicitly and you may run into a
         // race condition which causes some audio and video output frames to be lost, resulting in a blank preview view
         input.startRunning()
+        lensQueue.async { [weak self] in
+            guard let self, !self.desiredLensStack.applied.isEmpty else { return }
+            self.applyDesiredLensStackIfProcessorAvailable(completion: nil)
+        }
         applyPreferredExposureTargetBias()
         applyPreferredWhiteBalanceAdjustment()
         DispatchQueue.main.async { [weak self] in
@@ -646,18 +704,19 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let lenses = self.groupIDs.flatMap {
-                self.cameraKit.lenses.repository.lenses(groupID: $0)
-            }
-            self.uiDelegate?.cameraController(self, updatedLenses: lenses)
-        }
+        publishCarouselLenses()
     }
 
     open func repository(
         _ repository: LensRepository, didFailToUpdateLensesForGroupID groupID: String, error: Error?
     ) {
+    }
+
+    private func publishCarouselLenses() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.uiDelegate?.cameraController(self, updatedLenses: self.carouselLenses)
+        }
     }
 
     // MARK: LensPrefetcherObserver
@@ -895,6 +954,28 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     // MARK: Lens Application
 
+    /// Supplies the dedicated Retouch Lens used by the top-right Retouch control.
+    /// The Lens is excluded from the carousel and occupies the first composite-Lens layer.
+    public func configureRetouchLens(_ lens: Lens?, completion: ((Bool) -> Void)? = nil) {
+        configurePermanentLens(lens, control: .retouch, completion: completion)
+    }
+
+    /// Enables or disables the dedicated Retouch layer without changing the pinned or selected Lenses.
+    public func setRetouchEnabled(_ enabled: Bool, completion: ((Bool) -> Void)? = nil) {
+        setPermanentLensEnabled(enabled, control: .retouch, completion: completion)
+    }
+
+    /// Supplies the dedicated Rhinoplasty Lens used by the top-right Rhinoplasty control.
+    /// The Lens is excluded from the carousel and occupies the second composite-Lens layer.
+    public func configureRhinoplastyLens(_ lens: Lens?, completion: ((Bool) -> Void)? = nil) {
+        configurePermanentLens(lens, control: .rhinoplasty, completion: completion)
+    }
+
+    /// Enables or disables the dedicated Rhinoplasty layer without changing other Lens layers.
+    public func setRhinoplastyEnabled(_ enabled: Bool, completion: ((Bool) -> Void)? = nil) {
+        setPermanentLensEnabled(enabled, control: .rhinoplasty, completion: completion)
+    }
+
     /// Apply a specified lens.
     /// - Parameters:
     ///   - lens: selected lens
@@ -987,6 +1068,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 return
             }
             self.desiredLensStack.reset()
+            self.retouchRequestedEnabled = false
+            self.rhinoplastyRequestedEnabled = false
+            self.notifyControlsDidChange()
             self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
         }
     }
@@ -1261,6 +1345,15 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private let lensQueueKey = DispatchSpecificKey<Void>()
     private var desiredLensStack = LensLayerStack<Lens>()
     private var activeLensStack = LensLayerStack<Lens>()
+    private var configuredRetouchLens: Lens?
+    private var retouchRequestedEnabled = false
+    private var configuredRhinoplastyLens: Lens?
+    private var rhinoplastyRequestedEnabled = false
+
+    private enum PermanentLensControl {
+        case retouch
+        case rhinoplasty
+    }
 
     private enum PendingLensOperation {
         case apply(stack: LensLayerStack<Lens>, completion: ((Bool) -> Void)?)
@@ -1288,6 +1381,146 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     fileprivate var isAdjustingExposureObservation: NSKeyValueObservation?
 
     fileprivate var isAdjustingFocusObservation: NSKeyValueObservation?
+
+    private func configurePermanentLens(
+        _ lens: Lens?,
+        control: PermanentLensControl,
+        completion: ((Bool) -> Void)?
+    ) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+
+            let previousLens = self.configuredLens(for: control)
+            let hadActiveLayer = previousLens.map { previous in
+                self.activeLensStack.persistentBases.contains { active in
+                    self.lensesMatch(active, previous)
+                }
+            } ?? false
+            self.setConfiguredLens(lens, for: control)
+            self.updateDesiredPersistentBases()
+
+            let finish = { [weak self] (success: Bool) in
+                guard let self else {
+                    completion?(false)
+                    return
+                }
+                if !success {
+                    self.setPermanentLensRequested(
+                        self.activePersistentLens(matching: self.configuredLens(for: control)) != nil,
+                        for: control
+                    )
+                    self.updateDesiredPersistentBases()
+                }
+                self.notifyControlsDidChange()
+                completion?(success)
+            }
+
+            if self.isPermanentLensRequested(control) || hadActiveLayer {
+                self.applyDesiredLensStackIfProcessorAvailable(completion: finish)
+            } else {
+                finish(true)
+            }
+
+            self.publishCarouselLenses()
+            self.notifyControlsDidChange()
+        }
+    }
+
+    private func setPermanentLensEnabled(
+        _ enabled: Bool,
+        control: PermanentLensControl,
+        completion: ((Bool) -> Void)?
+    ) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+
+            self.setPermanentLensRequested(enabled, for: control)
+            self.updateDesiredPersistentBases()
+            if enabled, self.configuredLens(for: control) == nil {
+                self.notifyControlsDidChange()
+                completion?(false)
+                return
+            }
+
+            self.notifyControlsDidChange()
+            self.applyDesiredLensStackIfProcessorAvailable { [weak self] success in
+                guard let self else {
+                    completion?(false)
+                    return
+                }
+                if !success {
+                    self.setPermanentLensRequested(
+                        self.activePersistentLens(matching: self.configuredLens(for: control)) != nil,
+                        for: control
+                    )
+                    self.updateDesiredPersistentBases()
+                }
+                self.notifyControlsDidChange()
+                completion?(success)
+            }
+        }
+    }
+
+    private func configuredLens(for control: PermanentLensControl) -> Lens? {
+        switch control {
+        case .retouch: return configuredRetouchLens
+        case .rhinoplasty: return configuredRhinoplastyLens
+        }
+    }
+
+    private func setConfiguredLens(_ lens: Lens?, for control: PermanentLensControl) {
+        switch control {
+        case .retouch: configuredRetouchLens = lens
+        case .rhinoplasty: configuredRhinoplastyLens = lens
+        }
+    }
+
+    private func isPermanentLensRequested(_ control: PermanentLensControl) -> Bool {
+        switch control {
+        case .retouch: return retouchRequestedEnabled
+        case .rhinoplasty: return rhinoplastyRequestedEnabled
+        }
+    }
+
+    private func setPermanentLensRequested(_ enabled: Bool, for control: PermanentLensControl) {
+        switch control {
+        case .retouch: retouchRequestedEnabled = enabled
+        case .rhinoplasty: rhinoplastyRequestedEnabled = enabled
+        }
+    }
+
+    private func updateDesiredPersistentBases() {
+        let layers = [
+            retouchRequestedEnabled ? configuredRetouchLens : nil,
+            rhinoplastyRequestedEnabled ? configuredRhinoplastyLens : nil,
+        ].compactMap { $0 }
+        desiredLensStack.setPersistentBases(layers)
+    }
+
+    private func activePersistentLens(matching configuredLens: Lens?) -> Lens? {
+        guard let configuredLens else { return nil }
+        return activeLensStack.persistentBases.first { lensesMatch($0, configuredLens) }
+    }
+
+    private func applyDesiredLensStackIfProcessorAvailable(completion: ((Bool) -> Void)?) {
+        dispatchPrecondition(condition: .onQueue(lensQueue))
+        guard cameraKit.lenses.processor != nil else {
+            completion?(true)
+            return
+        }
+
+        if desiredLensStack.applied.isEmpty {
+            enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
+        } else {
+            enqueueLensOperationOnQueue(.apply(stack: desiredLensStack, completion: completion))
+        }
+    }
 
     private func enqueueLensOperationOnQueue(_ operation: PendingLensOperation) {
         dispatchPrecondition(condition: .onQueue(lensQueue))
@@ -1330,7 +1563,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     }
                     if success {
                         self.finishSuccessfulApply(stack, operation: operation)
-                    } else if stack.applied.count == 2, stack.pinnedBase != nil {
+                    } else if stack.applied.count >= 2, stack.selectedTop != nil {
                         self.restoreBaseAfterCompositeFailure(stack, processor: processor, operation: operation)
                     } else {
                         if self.lensStacksMatch(self.desiredLensStack, stack) {
@@ -1396,7 +1629,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         case 1:
             let lens = lenses[0]
             processor.apply(lens: lens, launchData: launchData(for: lens), completion: completion)
-        case 2:
+        default:
             let lensObjects: [Any] = lenses.map { $0 }
             let launchData = lenses.map(compositeLaunchData)
             SCCameraKitApplyCompositeLenses(
@@ -1405,8 +1638,6 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 launchData,
                 completion
             )
-        default:
-            completion(false)
         }
     }
 
@@ -1430,14 +1661,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         processor: LensProcessor,
         operation: PendingLensOperation
     ) {
-        var baseOnly = failedStack
-        baseOnly.clearTop()
-        guard let base = baseOnly.pinnedBase else {
+        var lowerLayers = failedStack
+        lowerLayers.clearTop()
+        guard let restoredLens = lowerLayers.current ?? lowerLayers.persistentBases.last else {
             finishLensOperation(operation, success: false)
             return
         }
 
-        processor.apply(lens: base, launchData: launchData(for: base)) { [weak self] restored in
+        applyLensStack(lowerLayers, processor: processor) { [weak self] restored in
             guard let self else {
                 operation.complete(false)
                 return
@@ -1448,12 +1679,15 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     return
                 }
                 if restored {
-                    self.activeLensStack = baseOnly
+                    self.activeLensStack = lowerLayers
                     if self.lensStacksMatch(self.desiredLensStack, failedStack) {
-                        self.desiredLensStack = baseOnly
+                        self.desiredLensStack = lowerLayers
                         self.publishLensStackDidChange()
                     }
-                    print("Composite Lens apply failed; restored pinned base \(self.lensName(base)) (\(base.id))")
+                    print(
+                        "Composite Lens apply failed; restored lower Lens layers through "
+                            + "\(self.lensName(restoredLens)) (\(restoredLens.id))"
+                    )
                     self.finishLensOperation(operation, success: false)
                 } else if
                     self.lensStacksMatch(self.desiredLensStack, failedStack),
@@ -1534,7 +1768,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func lensStacksMatch(_ lhs: LensLayerStack<Lens>, _ rhs: LensLayerStack<Lens>) -> Bool {
-        optionalLensesMatch(lhs.pinnedBase, rhs.pinnedBase)
+        lhs.persistentBases.count == rhs.persistentBases.count
+            && zip(lhs.persistentBases, rhs.persistentBases).allSatisfy {
+                lensesMatch($0.0, $0.1)
+            }
+            && optionalLensesMatch(lhs.pinnedBase, rhs.pinnedBase)
             && optionalLensesMatch(lhs.selectedTop, rhs.selectedTop)
     }
 

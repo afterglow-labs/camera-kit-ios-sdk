@@ -251,7 +251,7 @@ private struct PreviewLayer: View {
 
 private enum LensUILayout {
     static let bottomSafeAreaInset: CGFloat = 180
-    static let carouselTopInset: CGFloat = 260
+    static let carouselTopInset: CGFloat = 364
 }
 
 @available(iOS 14.0, *)
@@ -460,6 +460,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
+            retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
+            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         view.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
@@ -470,6 +472,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
+            retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
+            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
@@ -616,6 +620,20 @@ private final class InclusiveCameraControlsView: UIView {
             cameraController?.setHighDefinitionLensRenderingEnabled(false)
         }
 
+        cameraActionsView.retouchActionView.enableAction = { [weak cameraController] in
+            cameraController?.setRetouchEnabled(true)
+        }
+        cameraActionsView.retouchActionView.disableAction = { [weak cameraController] in
+            cameraController?.setRetouchEnabled(false)
+        }
+
+        cameraActionsView.rhinoplastyActionView.enableAction = { [weak cameraController] in
+            cameraController?.setRhinoplastyEnabled(true)
+        }
+        cameraActionsView.rhinoplastyActionView.disableAction = { [weak cameraController] in
+            cameraController?.setRhinoplastyEnabled(false)
+        }
+
         configureControlVisibilityCallbacks()
         updateFlashToggle(for: cameraController.cameraPosition)
         syncControlState(with: cameraController)
@@ -627,6 +645,8 @@ private final class InclusiveCameraControlsView: UIView {
         cameraActionsView.flashActionView.toggleButton.isSelected = cameraController.flashState != .off
         cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
             cameraController.isHighDefinitionLensRenderingEnabled
+        cameraActionsView.retouchActionView.toggleButton.isSelected = cameraController.isRetouchEnabled
+        cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
         syncAdjustment(
             cameraActionsView.toneMapActionView,
             control: toneMapControlView,
@@ -659,9 +679,17 @@ private final class InclusiveCameraControlsView: UIView {
         }
     }
 
-    func updateAdjustmentAvailability(tone: Bool, portrait: Bool, highDefinition: Bool) {
+    func updateAdjustmentAvailability(
+        tone: Bool,
+        portrait: Bool,
+        retouch: Bool,
+        rhinoplasty: Bool,
+        highDefinition: Bool
+    ) {
         cameraActionsView.toneMapActionView.isHidden = !tone
         cameraActionsView.portraitActionView.isHidden = !portrait
+        cameraActionsView.retouchActionView.isHidden = !retouch
+        cameraActionsView.rhinoplastyActionView.isHidden = !rhinoplasty
         cameraActionsView.highDefinitionActionView.isHidden = !highDefinition
         if !tone {
             toneMapControlView.isHidden = true

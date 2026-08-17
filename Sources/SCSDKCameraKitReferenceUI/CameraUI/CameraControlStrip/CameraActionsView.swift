@@ -118,6 +118,40 @@ public class CameraActionsView: UIView {
         return view
     }()
 
+    /// Button to enable or disable the host-provided persistent Retouch Lens layer.
+    public lazy var retouchActionView: CameraConfigurableActionView = {
+        let view = CameraConfigurableActionView()
+        view.configurable = false
+        view.toggleButton.accessibilityIdentifier = CameraElements.retouchToggleButton.id
+        view.toggleButton.accessibilityLabel = "Retouch"
+        view.toggleButton.tintColor = .white
+        if let image = UIImage(
+            systemName: "wand.and.stars",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
+        ) {
+            view.toggleButton.setImage(image, for: .normal)
+            view.toggleButton.setImage(image.circleHighlightedImage(radius: 20, color: .white), for: .selected)
+        }
+        return view
+    }()
+
+    /// Button to enable or disable the host-provided persistent Rhinoplasty Lens layer.
+    public lazy var rhinoplastyActionView: CameraConfigurableActionView = {
+        let view = CameraConfigurableActionView()
+        view.configurable = false
+        view.toggleButton.accessibilityIdentifier = CameraElements.rhinoplastyToggleButton.id
+        view.toggleButton.accessibilityLabel = "Rhinoplasty"
+        view.toggleButton.tintColor = .white
+        if let image = UIImage(
+            systemName: "face.smiling",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold)
+        ) {
+            view.toggleButton.setImage(image, for: .normal)
+            view.toggleButton.setImage(image.circleHighlightedImage(radius: 20, color: .white), for: .selected)
+        }
+        return view
+    }()
+
     /// Button to enable or disable Camera Kit's native high-definition Lens rendering path.
     public lazy var highDefinitionActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
@@ -135,13 +169,16 @@ public class CameraActionsView: UIView {
     /// Stack view used to arrange the view's buttons.
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
+            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, retouchActionView,
+            rhinoplastyActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
         stackView.setCustomSpacing(6, after: flashActionView)
         stackView.setCustomSpacing(6, after: toneMapActionView)
         stackView.setCustomSpacing(6, after: portraitActionView)
+        stackView.setCustomSpacing(6, after: retouchActionView)
+        stackView.setCustomSpacing(6, after: rhinoplastyActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         return stackView

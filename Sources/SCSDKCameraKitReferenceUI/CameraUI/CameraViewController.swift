@@ -251,6 +251,10 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         cameraView.cameraActionsView.flashActionView.toggleButton.isSelected = controller.flashState != .off
         cameraView.cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
             controller.isHighDefinitionLensRenderingEnabled
+        cameraView.cameraActionsView.retouchActionView.isHidden = !controller.isRetouchAvailable
+        cameraView.cameraActionsView.retouchActionView.toggleButton.isSelected = controller.isRetouchEnabled
+        cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !controller.isRhinoplastyAvailable
+        cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = controller.isRhinoplastyEnabled
         syncAdjustment(
             cameraView.cameraActionsView.toneMapActionView,
             control: cameraView.toneMapControlView,
@@ -417,6 +421,8 @@ private extension CameraViewController {
         setupFlashButtons()
         setupToneMapAdjustmentButtons()
         setupPortraitAdjustmentButtons()
+        setupRetouchButton()
+        setupRhinoplastyButton()
         setupHighDefinitionRenderingButton()
 
         cameraView.carouselView.delegate = self
@@ -430,6 +436,38 @@ private extension CameraViewController {
         cameraView.portraitControlView.delegate = cameraController
 
         cameraView.flashControlView.delegate = self
+    }
+}
+
+// MARK: Persistent Retouch Lens
+
+extension CameraViewController {
+    private func setupRetouchButton() {
+        let action = cameraView.cameraActionsView.retouchActionView
+        action.isHidden = !cameraController.isRetouchAvailable
+        action.toggleButton.isSelected = cameraController.isRetouchEnabled
+        action.enableAction = { [weak cameraController] in
+            cameraController?.setRetouchEnabled(true)
+        }
+        action.disableAction = { [weak cameraController] in
+            cameraController?.setRetouchEnabled(false)
+        }
+    }
+}
+
+// MARK: Persistent Rhinoplasty Lens
+
+extension CameraViewController {
+    private func setupRhinoplastyButton() {
+        let action = cameraView.cameraActionsView.rhinoplastyActionView
+        action.isHidden = !cameraController.isRhinoplastyAvailable
+        action.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        action.enableAction = { [weak cameraController] in
+            cameraController?.setRhinoplastyEnabled(true)
+        }
+        action.disableAction = { [weak cameraController] in
+            cameraController?.setRhinoplastyEnabled(false)
+        }
     }
 }
 
@@ -550,6 +588,8 @@ extension CameraViewController: AdjustmentsProcessorObserver {
         cameraView.cameraActionsView.portraitActionView.isHidden = !cameraController.isPortraitAdjustmentAvailable
         cameraView.cameraActionsView.highDefinitionActionView.isHidden =
             !cameraController.supportsHighDefinitionLensRendering
+        cameraView.cameraActionsView.retouchActionView.isHidden = !cameraController.isRetouchAvailable
+        cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !cameraController.isRhinoplastyAvailable
     }
 }
 
@@ -661,23 +701,21 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
 
     public func itemsForCarouselView(_ view: CarouselView) -> [CarouselItem] {
         [EmptyItem()]
-            + cameraController.groupIDs.flatMap {
-                cameraController.cameraKit.lenses.repository.lenses(groupID: $0).map {
-                    let lens = $0
-                    return CarouselItem(
-                        lensId: lens.id,
-                        groupId: lens.groupId,
-                        imageUrl: lens.iconUrl,
-                        contextMenuProvider: { [weak self] in
-                            guard let self else { return nil }
-                            return LensLayerContextMenu.make(
-                                for: lens,
-                                controller: self.cameraController,
-                                supplemental: self.lensContextMenuProvider?(lens)
-                            )
-                        }
-                    )
-                }
+            + cameraController.carouselLenses.map {
+                let lens = $0
+                return CarouselItem(
+                    lensId: lens.id,
+                    groupId: lens.groupId,
+                    imageUrl: lens.iconUrl,
+                    contextMenuProvider: { [weak self] in
+                        guard let self else { return nil }
+                        return LensLayerContextMenu.make(
+                            for: lens,
+                            controller: self.cameraController,
+                            supplemental: self.lensContextMenuProvider?(lens)
+                        )
+                    }
+                )
             }
     }
 }
@@ -685,7 +723,7 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
 private extension CameraViewController {
     func updateLensStackPresentation() {
         cameraView.lensLabel.text = cameraController.lensDisplayName
-        cameraView.cameraBottomBar.closeButton.isHidden = cameraController.appliedLenses.isEmpty
+        cameraView.cameraBottomBar.closeButton.isHidden = cameraController.currentLens == nil
 
         if let currentLens = cameraController.currentLens {
             cameraView.carouselView.selectItem(
