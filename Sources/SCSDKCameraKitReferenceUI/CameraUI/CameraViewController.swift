@@ -28,6 +28,14 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     /// Receives completed recordings instead of presenting the reference video preview.
     public var onVideoRecorded: ((URL) -> Void)?
 
+    /// Selects the on-screen video shown while Camera Kit records.
+    public var recordingPreviewMode: RecordingPreviewMode = .lens {
+        didSet {
+            guard oldValue != recordingPreviewMode, isViewLoaded else { return }
+            updateRecordingPreview()
+        }
+    }
+
     /// Provides native context menus for Lens carousel items.
     public var lensContextMenuProvider: ((Lens) -> UIMenu?)?
     
@@ -60,6 +68,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
     private var recordingActive = false
     private var recordingFinalizing = false
+    private var lensPreviewOutputAttached = false
 
     override open func loadView() {
         view = cameraView
@@ -125,7 +134,10 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     deinit {
         NotificationCenter.default.removeObserver(self)
         cameraController.cameraKit.adjustments.processor?.removeObserver(self)
-        cameraController.cameraKit.remove(output: cameraView.previewView)
+        if lensPreviewOutputAttached {
+            cameraController.cameraKit.remove(output: cameraView.previewView)
+        }
+        cameraView.rawCameraPreviewView.disconnect()
         if cameraController.uiDelegate === self {
             cameraController.uiDelegate = nil
         }
@@ -154,8 +166,10 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
     override public func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        cameraController.cameraKit.videoOrientation = videoOrientation(
+        let targetVideoOrientation = videoOrientation(
             from: orientation(from: lastUsedOrientation, transform: coordinator.targetTransform))
+        cameraController.cameraKit.videoOrientation = targetVideoOrientation
+        cameraView.rawCameraPreviewView.videoOrientation = targetVideoOrientation
         coordinator.animate { _ in } completion: { [self] _ in
             // pre-iOS16 returns 'old' orientation, so we should capture value in completion block
             lastUsedOrientation = applicationInterfaceOrientation
@@ -338,9 +352,36 @@ private extension CameraViewController {
             }
         )
         setupActions()
-        cameraController.cameraKit.add(output: cameraView.previewView)
+        cameraView.rawCameraPreviewView.videoOrientation = videoOrientation(from: applicationInterfaceOrientation)
+        setLensPreviewOutputAttached(true)
         cameraController.uiDelegate = self
         setupSystemNotificationObservers()
+    }
+
+    func updateRecordingPreview() {
+        let presentation = RecordingPreviewPresentation.resolve(
+            mode: recordingPreviewMode,
+            isRecording: recordingActive
+        )
+        if presentation.showsRawCamera {
+            cameraView.rawCameraPreviewView.connect(to: cameraController.captureSession)
+            cameraView.rawCameraPreviewView.isHidden = false
+        } else {
+            cameraView.rawCameraPreviewView.isHidden = true
+            cameraView.rawCameraPreviewView.disconnect()
+        }
+        setLensPreviewOutputAttached(presentation.attachesLensOutput)
+        cameraView.previewView.isHidden = !presentation.attachesLensOutput
+    }
+
+    func setLensPreviewOutputAttached(_ attached: Bool) {
+        guard lensPreviewOutputAttached != attached else { return }
+        lensPreviewOutputAttached = attached
+        if attached {
+            cameraController.cameraKit.add(output: cameraView.previewView)
+        } else {
+            cameraController.cameraKit.remove(output: cameraView.previewView)
+        }
     }
 
     /// Configures the target actions and delegates needed for the view controller to function
@@ -699,6 +740,7 @@ extension CameraViewController {
         cameraView.setVideoCaptureButtonRecording(true)
         print("Start recording")
         cameraController.startRecording()
+        updateRecordingPreview()
         appOrientationDelegate?.lockOrientation(currentInterfaceOrientationMask)
         if #available(iOS 16.0, *) {
             UIView.performWithoutAnimation {
@@ -712,6 +754,7 @@ extension CameraViewController {
         guard recordingActive else { return }
         recordingActive = false
         cameraView.setVideoCaptureButtonRecording(false)
+        updateRecordingPreview()
         cameraController.cancelRecording()
         restoreActiveCameraState()
     }
@@ -721,6 +764,7 @@ extension CameraViewController {
         recordingActive = false
         recordingFinalizing = true
         cameraView.setVideoCaptureButtonRecording(false)
+        updateRecordingPreview()
         print("Finish recording")
         cameraController.finishRecording { url, error in
             DispatchQueue.main.async {
@@ -765,6 +809,7 @@ extension CameraViewController {
         recordingActive = false
         recordingFinalizing = false
         cameraView.setVideoCaptureButtonRecording(false)
+        updateRecordingPreview()
         appOrientationDelegate?.unlockOrientation()
         if #available(iOS 16.0, *) {
             UIView.performWithoutAnimation {

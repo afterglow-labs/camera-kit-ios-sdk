@@ -7,6 +7,13 @@ import UIKit
 
 /// This is the default view that backs the CameraViewController.
 open class CameraView: UIView {
+    /// Direct capture-session preview displayed when processed Lens preview is disabled while recording.
+    public let rawCameraPreviewView: RawCameraPreviewView = {
+        let view = RawCameraPreviewView()
+        view.isHidden = true
+        return view
+    }()
+
     /// default camerakit view to draw outputted textures
     public let previewView = PreviewView()
 
@@ -243,7 +250,9 @@ open class CameraView: UIView {
 
     override open func layoutSubviews() {
         super.layoutSubviews()
-        previewView.frame = resolvedPreviewFrame
+        let previewFrame = resolvedPreviewFrame
+        rawCameraPreviewView.frame = previewFrame
+        previewView.frame = previewFrame
         previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
@@ -281,7 +290,9 @@ extension CameraView {
 
     private func setupPreview() {
         backgroundColor = .black
+        addSubview(rawCameraPreviewView)
         addSubview(previewView)
+        rawCameraPreviewView.frame = bounds
         previewView.frame = bounds
         previewView.contentMode = .aspectFit
     }

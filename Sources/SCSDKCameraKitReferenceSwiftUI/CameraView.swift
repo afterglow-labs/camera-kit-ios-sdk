@@ -44,6 +44,7 @@ public struct CameraView: View {
     private let showsLensCarousel: Bool
     private let showsCameraKitControls: Bool
     private let showsChromeVisibilityButton: Bool
+    private let recordingPreviewMode: RecordingPreviewMode
     private let lensContextMenuProvider: ((Lens) -> UIMenu?)?
     private let onVideoRecorded: ((URL) -> Void)?
 
@@ -56,6 +57,7 @@ public struct CameraView: View {
         showsLensCarousel: Bool = true,
         showsCameraKitControls: Bool = true,
         showsChromeVisibilityButton: Bool = true,
+        recordingPreviewMode: RecordingPreviewMode = .lens,
         lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil,
         onVideoRecorded: ((URL) -> Void)? = nil,
         onChromeHiddenChange: ((Bool) -> Void)? = nil
@@ -68,6 +70,7 @@ public struct CameraView: View {
         self.showsLensCarousel = showsLensCarousel
         self.showsCameraKitControls = showsCameraKitControls
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
+        self.recordingPreviewMode = recordingPreviewMode
         self.lensContextMenuProvider = lensContextMenuProvider
         self.onVideoRecorded = onVideoRecorded
         self.onChromeHiddenChange = onChromeHiddenChange
@@ -83,7 +86,8 @@ public struct CameraView: View {
                 state: state,
                 cameraController: cameraController,
                 aspectRatio: previewAspectRatio,
-                mirrored: previewMirrored
+                mirrored: previewMirrored,
+                recordingPreviewMode: recordingPreviewMode
             )
             .edgesIgnoringSafeArea(.all)
             if captureChromeVisible {
@@ -182,17 +186,29 @@ private struct PreviewLayer: View {
     let cameraController: CameraController
     let aspectRatio: CameraPreviewAspectRatio
     let mirrored: Bool
+    let recordingPreviewMode: RecordingPreviewMode
 
     var body: some View {
         GeometryReader { proxy in
             let previewSize = fittedPreviewSize(in: proxy.size, aspectRatio: aspectRatio.widthToHeight)
+            let presentation = RecordingPreviewPresentation.resolve(
+                mode: recordingPreviewMode,
+                isRecording: state.recording
+            )
             ZStack {
+                if presentation.showsRawCamera {
+                    RawCameraPreviewRepresentable(captureSession: cameraController.captureSession)
+                        .frame(width: previewSize.width, height: previewSize.height)
+                        .scaleEffect(x: mirrored ? -1 : 1, y: 1)
+                }
                 PreviewView(
                     cameraKit: cameraController.cameraKit,
-                    bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset
+                    bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset,
+                    outputEnabled: presentation.attachesLensOutput
                 )
                     .frame(width: previewSize.width, height: previewSize.height)
                     .scaleEffect(x: mirrored ? -1 : 1, y: 1)
+                    .opacity(presentation.attachesLensOutput ? 1 : 0)
                     .onTapGesture(count: 2, perform: cameraController.flipCamera)
                     .gesture(
                         MagnificationGesture(minimumScaleDelta: 0)
@@ -200,6 +216,7 @@ private struct PreviewLayer: View {
                             .onEnded { _ in
                                 cameraController.finalizeZoom()
                             })
+                    .allowsHitTesting(presentation.attachesLensOutput)
                 RingLightRepresentable(state: state)
                     .allowsHitTesting(false)
                     .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
@@ -909,6 +926,27 @@ struct MessageView: View {
         .animation(.easeInOut, value: showing)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, 16)
+    }
+}
+
+@available(iOS 14.0, *)
+private struct RawCameraPreviewRepresentable: UIViewRepresentable {
+    let captureSession: AVCaptureSession
+
+    func makeUIView(context: Context) -> RawCameraPreviewView {
+        let view = RawCameraPreviewView()
+        view.videoOrientation = .portrait
+        view.connect(to: captureSession)
+        return view
+    }
+
+    func updateUIView(_ uiView: RawCameraPreviewView, context: Context) {
+        uiView.videoOrientation = .portrait
+        uiView.connect(to: captureSession)
+    }
+
+    static func dismantleUIView(_ uiView: RawCameraPreviewView, coordinator: ()) {
+        uiView.disconnect()
     }
 }
 
