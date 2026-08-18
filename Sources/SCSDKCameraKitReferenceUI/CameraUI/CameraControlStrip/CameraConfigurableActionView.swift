@@ -148,6 +148,36 @@ public class CameraConfigurableActionView: UIView {
     }
 }
 
+extension CameraConfigurableActionView {
+    public func updateRetouchVariantMenu(
+        variants: [RetouchLensVariant],
+        selected: RetouchLensVariant,
+        onSelect: @escaping (RetouchLensVariant) -> Void
+    ) {
+        configurable = variants.count > 1
+        toggleButton.accessibilityValue = selected.displayName
+
+        guard #available(iOS 14.0, *), variants.count > 1 else {
+            configurationButton.menu = nil
+            toggleButton.menu = nil
+            return
+        }
+
+        let actions = variants.map { variant in
+            UIAction(
+                title: variant.displayName,
+                state: variant == selected ? .on : .off
+            ) { _ in
+                onSelect(variant)
+            }
+        }
+        let menu = UIMenu(title: "Retouch Style", options: .displayInline, children: actions)
+        configurationButton.menu = menu
+        configurationButton.showsMenuAsPrimaryAction = true
+        toggleButton.menu = menu
+    }
+}
+
 // MARK: General View Setup
 
 extension CameraConfigurableActionView {

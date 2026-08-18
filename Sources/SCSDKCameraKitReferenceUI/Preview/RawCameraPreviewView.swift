@@ -17,6 +17,11 @@ public final class RawCameraPreviewView: UIView {
         didSet { updateConnection() }
     }
 
+    /// Mirrors only this raw recording preview. It does not alter captured frames.
+    public var isVideoMirrored = true {
+        didSet { updateConnection() }
+    }
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
@@ -54,7 +59,7 @@ public final class RawCameraPreviewView: UIView {
         }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = false
+            connection.isVideoMirrored = isVideoMirrored
         }
     }
 }

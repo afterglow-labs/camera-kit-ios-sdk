@@ -40,6 +40,7 @@ public struct CameraView: View {
     private let onChromeHiddenChange: ((Bool) -> Void)?
     private let previewAspectRatio: CameraPreviewAspectRatio
     private let previewMirrored: Bool
+    private let rawRecordingPreviewMirrored: Bool
     private let showsCaptureChrome: Bool
     private let showsLensCarousel: Bool
     private let lensCarouselMaximumVisibleItemCount: Int
@@ -53,6 +54,7 @@ public struct CameraView: View {
         cameraController: CameraController,
         previewAspectRatio: CameraPreviewAspectRatio = .fullScreen,
         previewMirrored: Bool = false,
+        rawRecordingPreviewMirrored: Bool = true,
         chromeHidden: Binding<Bool> = .constant(false),
         showsCaptureChrome: Bool = true,
         showsLensCarousel: Bool = true,
@@ -67,6 +69,7 @@ public struct CameraView: View {
         self.cameraController = cameraController
         self.previewAspectRatio = previewAspectRatio
         self.previewMirrored = previewMirrored
+        self.rawRecordingPreviewMirrored = rawRecordingPreviewMirrored
         self._chromeHidden = chromeHidden
         self.showsCaptureChrome = showsCaptureChrome
         self.showsLensCarousel = showsLensCarousel
@@ -90,6 +93,7 @@ public struct CameraView: View {
                 cameraController: cameraController,
                 aspectRatio: previewAspectRatio,
                 mirrored: previewMirrored,
+                rawRecordingPreviewMirrored: rawRecordingPreviewMirrored,
                 recordingPreviewMode: recordingPreviewMode
             )
             .edgesIgnoringSafeArea(.all)
@@ -190,6 +194,7 @@ private struct PreviewLayer: View {
     let cameraController: CameraController
     let aspectRatio: CameraPreviewAspectRatio
     let mirrored: Bool
+    let rawRecordingPreviewMirrored: Bool
     let recordingPreviewMode: RecordingPreviewMode
 
     var body: some View {
@@ -201,9 +206,11 @@ private struct PreviewLayer: View {
             )
             ZStack {
                 if presentation.showsRawCamera {
-                    RawCameraPreviewRepresentable(captureSession: cameraController.captureSession)
+                    RawCameraPreviewRepresentable(
+                        captureSession: cameraController.captureSession,
+                        mirrored: rawRecordingPreviewMirrored
+                    )
                         .frame(width: previewSize.width, height: previewSize.height)
-                        .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                 }
                 PreviewView(
                     cameraKit: cameraController.cameraKit,
@@ -650,6 +657,18 @@ private final class InclusiveCameraControlsView: UIView {
         cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
             cameraController.isHighDefinitionModeEnabled
         cameraActionsView.retouchActionView.toggleButton.isSelected = cameraController.isRetouchEnabled
+        let retouchAction = cameraActionsView.retouchActionView
+        retouchAction.updateRetouchVariantMenu(
+            variants: cameraController.availableRetouchLensVariants,
+            selected: cameraController.selectedRetouchLensVariant
+        ) { [weak cameraController] variant in
+            cameraController?.setRetouchLensVariant(variant)
+        }
+        if cameraController.isRetouchEnabled, retouchAction.configurable {
+            retouchAction.expand()
+        } else {
+            retouchAction.collapse()
+        }
         cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
         syncAdjustment(
             cameraActionsView.toneMapActionView,
@@ -964,16 +983,19 @@ struct MessageView: View {
 @available(iOS 14.0, *)
 private struct RawCameraPreviewRepresentable: UIViewRepresentable {
     let captureSession: AVCaptureSession
+    let mirrored: Bool
 
     func makeUIView(context: Context) -> RawCameraPreviewView {
         let view = RawCameraPreviewView()
         view.videoOrientation = .portrait
+        view.isVideoMirrored = mirrored
         view.connect(to: captureSession)
         return view
     }
 
     func updateUIView(_ uiView: RawCameraPreviewView, context: Context) {
         uiView.videoOrientation = .portrait
+        uiView.isVideoMirrored = mirrored
         uiView.connect(to: captureSession)
     }
 

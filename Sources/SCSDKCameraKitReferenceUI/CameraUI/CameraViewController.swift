@@ -36,6 +36,14 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         }
     }
 
+    /// Mirrors the direct capture-session preview shown by Raw Camera recording mode.
+    public var rawRecordingPreviewMirrored = true {
+        didSet {
+            guard oldValue != rawRecordingPreviewMirrored, isViewLoaded else { return }
+            cameraView.rawCameraPreviewView.isVideoMirrored = rawRecordingPreviewMirrored
+        }
+    }
+
     /// Provides native context menus for Lens carousel items.
     public var lensContextMenuProvider: ((Lens) -> UIMenu?)?
     
@@ -251,8 +259,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         cameraView.cameraActionsView.flashActionView.toggleButton.isSelected = controller.flashState != .off
         cameraView.cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
             controller.isHighDefinitionModeEnabled
-        cameraView.cameraActionsView.retouchActionView.isHidden = !controller.isRetouchAvailable
-        cameraView.cameraActionsView.retouchActionView.toggleButton.isSelected = controller.isRetouchEnabled
+        syncRetouchAction(with: controller)
         cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !controller.isRhinoplastyAvailable
         cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = controller.isRhinoplastyEnabled
         syncAdjustment(
@@ -368,6 +375,7 @@ private extension CameraViewController {
             isRecording: recordingActive
         )
         if presentation.showsRawCamera {
+            cameraView.rawCameraPreviewView.isVideoMirrored = rawRecordingPreviewMirrored
             cameraView.rawCameraPreviewView.connect(to: cameraController.captureSession)
             cameraView.rawCameraPreviewView.isHidden = false
         } else {
@@ -444,13 +452,29 @@ private extension CameraViewController {
 extension CameraViewController {
     private func setupRetouchButton() {
         let action = cameraView.cameraActionsView.retouchActionView
-        action.isHidden = !cameraController.isRetouchAvailable
-        action.toggleButton.isSelected = cameraController.isRetouchEnabled
         action.enableAction = { [weak cameraController] in
             cameraController?.setRetouchEnabled(true)
         }
         action.disableAction = { [weak cameraController] in
             cameraController?.setRetouchEnabled(false)
+        }
+        syncRetouchAction(with: cameraController)
+    }
+
+    private func syncRetouchAction(with controller: CameraController) {
+        let action = cameraView.cameraActionsView.retouchActionView
+        action.isHidden = !controller.isRetouchAvailable
+        action.toggleButton.isSelected = controller.isRetouchEnabled
+        action.updateRetouchVariantMenu(
+            variants: controller.availableRetouchLensVariants,
+            selected: controller.selectedRetouchLensVariant
+        ) { [weak controller] variant in
+            controller?.setRetouchLensVariant(variant)
+        }
+        if controller.isRetouchEnabled, action.configurable {
+            action.expand()
+        } else {
+            action.collapse()
         }
     }
 }

@@ -186,6 +186,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         readLensState { retouchRequestedEnabled }
     }
 
+    /// Retouch implementations currently supplied by the host app.
+    public var availableRetouchLensVariants: [RetouchLensVariant] {
+        readLensState { configuredRetouchOptions.availableVariants }
+    }
+
+    /// The Retouch implementation used the next time the layer is enabled, or currently in use.
+    public var selectedRetouchLensVariant: RetouchLensVariant {
+        readLensState {
+            configuredRetouchOptions.resolvedVariant(preferred: selectedRetouchVariant) ?? selectedRetouchVariant
+        }
+    }
+
     /// The confirmed persistent Rhinoplasty Lens, if one is active.
     public var activeRhinoplastyLens: Lens? {
         readLensState {
@@ -224,11 +236,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
-    /// Lenses exposed to the reference carousel. The dedicated Retouch Lens is controlled separately.
+    /// Lenses exposed to the reference carousel. Dedicated permanent-control Lenses are excluded.
     public var carouselLenses: [Lens] {
         let hiddenControlIdentities = readLensState {
-            [configuredRetouchLens, configuredRhinoplastyLens]
-                .compactMap { $0 }
+            (configuredRetouchOptions.values + [configuredRhinoplastyLens].compactMap { $0 })
                 .map { identity(for: $0) }
         }
         return groupIDs
@@ -425,6 +436,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     self.desiredLensStack.reset()
                     self.activeLensStack.reset()
                     self.configuredRetouchLens = nil
+                    self.configuredRetouchOptions = RetouchLensOptions(standard: nil, machineLearning: nil)
+                    self.selectedRetouchVariant = .standard
                     self.retouchRequestedEnabled = false
                     self.configuredRhinoplastyLens = nil
                     self.rhinoplastyRequestedEnabled = false
@@ -975,7 +988,51 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Supplies the dedicated Retouch Lens used by the top-right Retouch control.
     /// The Lens is excluded from the carousel and occupies the first composite-Lens layer.
     public func configureRetouchLens(_ lens: Lens?, completion: ((Bool) -> Void)? = nil) {
-        configurePermanentLens(lens, control: .retouch, completion: completion)
+        configureRetouchLenses(
+            standard: lens,
+            machineLearning: nil,
+            selected: .standard,
+            completion: completion
+        )
+    }
+
+    /// Supplies both Retouch implementations used by the top-right Retouch control.
+    public func configureRetouchLenses(
+        standard: Lens?,
+        machineLearning: Lens?,
+        selected: RetouchLensVariant = .standard,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        let options = RetouchLensOptions(standard: standard, machineLearning: machineLearning)
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            self.configuredRetouchOptions = options
+            let resolvedVariant = options.resolvedVariant(preferred: selected)
+            self.selectedRetouchVariant = resolvedVariant ?? selected
+            self.configurePermanentLensOnQueue(
+                resolvedVariant.flatMap { options[$0] },
+                control: .retouch,
+                completion: completion
+            )
+        }
+    }
+
+    /// Replaces the Retouch layer with another configured implementation without disturbing other Lenses.
+    public func setRetouchLensVariant(
+        _ variant: RetouchLensVariant,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped, let lens = self.configuredRetouchOptions[variant] else {
+                completion?(false)
+                return
+            }
+            self.selectedRetouchVariant = variant
+            self.configurePermanentLensOnQueue(lens, control: .retouch, completion: completion)
+        }
     }
 
     /// Enables or disables the dedicated Retouch layer without changing the pinned or selected Lenses.
@@ -1399,6 +1456,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var desiredLensStack = LensLayerStack<Lens>()
     private var activeLensStack = LensLayerStack<Lens>()
     private var configuredRetouchLens: Lens?
+    private var configuredRetouchOptions = RetouchLensOptions<Lens>(standard: nil, machineLearning: nil)
+    private var selectedRetouchVariant: RetouchLensVariant = .standard
     private var retouchRequestedEnabled = false
     private var configuredRhinoplastyLens: Lens?
     private var rhinoplastyRequestedEnabled = false
@@ -1446,40 +1505,50 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 return
             }
 
-            let previousLens = self.configuredLens(for: control)
-            let hadActiveLayer = previousLens.map { previous in
-                self.activeLensStack.persistentBases.contains { active in
-                    self.lensesMatch(active, previous)
-                }
-            } ?? false
-            self.setConfiguredLens(lens, for: control)
-            self.updateDesiredPersistentBases()
-
-            let finish = { [weak self] (success: Bool) in
-                guard let self else {
-                    completion?(false)
-                    return
-                }
-                if !success {
-                    self.setPermanentLensRequested(
-                        self.activePersistentLens(matching: self.configuredLens(for: control)) != nil,
-                        for: control
-                    )
-                    self.updateDesiredPersistentBases()
-                }
-                self.notifyControlsDidChange()
-                completion?(success)
-            }
-
-            if self.isPermanentLensRequested(control) || hadActiveLayer {
-                self.applyDesiredLensStackIfProcessorAvailable(completion: finish)
-            } else {
-                finish(true)
-            }
-
-            self.publishCarouselLenses()
-            self.notifyControlsDidChange()
+            self.configurePermanentLensOnQueue(lens, control: control, completion: completion)
         }
+    }
+
+    private func configurePermanentLensOnQueue(
+        _ lens: Lens?,
+        control: PermanentLensControl,
+        completion: ((Bool) -> Void)?
+    ) {
+        dispatchPrecondition(condition: .onQueue(lensQueue))
+
+        let previousLens = configuredLens(for: control)
+        let hadActiveLayer = previousLens.map { previous in
+            activeLensStack.persistentBases.contains { active in
+                lensesMatch(active, previous)
+            }
+        } ?? false
+        setConfiguredLens(lens, for: control)
+        updateDesiredPersistentBases()
+
+        let finish = { [weak self] (success: Bool) in
+            guard let self else {
+                completion?(false)
+                return
+            }
+            if !success {
+                self.setPermanentLensRequested(
+                    self.activePersistentLens(matching: self.configuredLens(for: control)) != nil,
+                    for: control
+                )
+                self.updateDesiredPersistentBases()
+            }
+            self.notifyControlsDidChange()
+            completion?(success)
+        }
+
+        if isPermanentLensRequested(control) || hadActiveLayer {
+            applyDesiredLensStackIfProcessorAvailable(completion: finish)
+        } else {
+            finish(true)
+        }
+
+        publishCarouselLenses()
+        notifyControlsDidChange()
     }
 
     private func setPermanentLensEnabled(
