@@ -43,9 +43,13 @@ enum LensRenderingResolution {
 }
 
 enum HighDefinitionLensRenderingPolicy {
-    static func overrideSize(enabled: Bool, lensActive: Bool, sourceSize: CGSize) -> CGSize? {
+    static func overrideSize(
+        enabled: Bool,
+        lensActive: Bool,
+        sourceSize: @autoclosure () -> CGSize
+    ) -> CGSize? {
         guard enabled, lensActive else { return nil }
-        let resolvedSize = LensRenderingResolution.fullResolution(for: sourceSize)
+        let resolvedSize = LensRenderingResolution.fullResolution(for: sourceSize())
         return resolvedSize == .zero ? nil : resolvedSize
     }
 }

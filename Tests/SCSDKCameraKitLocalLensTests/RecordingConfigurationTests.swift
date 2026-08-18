@@ -235,6 +235,42 @@ final class RecordingConfigurationTests: XCTestCase {
         )
     }
 
+    func testHighDefinitionLensRenderingDoesNotReadSourceUntilItCanApply() {
+        var sourceReadCount = 0
+        func sourceSize() -> CGSize {
+            sourceReadCount += 1
+            return CGSize(width: 1_080, height: 1_920)
+        }
+
+        XCTAssertNil(
+            HighDefinitionLensRenderingPolicy.overrideSize(
+                enabled: false,
+                lensActive: true,
+                sourceSize: sourceSize()
+            )
+        )
+        XCTAssertEqual(sourceReadCount, 0)
+
+        XCTAssertNil(
+            HighDefinitionLensRenderingPolicy.overrideSize(
+                enabled: true,
+                lensActive: false,
+                sourceSize: sourceSize()
+            )
+        )
+        XCTAssertEqual(sourceReadCount, 0)
+
+        XCTAssertEqual(
+            HighDefinitionLensRenderingPolicy.overrideSize(
+                enabled: true,
+                lensActive: true,
+                sourceSize: sourceSize()
+            ),
+            CGSize(width: 1_080, height: 1_920)
+        )
+        XCTAssertEqual(sourceReadCount, 1)
+    }
+
     func testHighDefinitionCameraFormatPromotesNative720pTo1080p() {
         let preferred = HighDefinitionCameraFormatPolicy.preferredDimensions(
             requested: CGSize(width: 1_280, height: 720),

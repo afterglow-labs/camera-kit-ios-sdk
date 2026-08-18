@@ -913,15 +913,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func refreshHighDefinitionLensRendering() {
-        let activeInputSize = cameraKit.activeInput.frameSize
-        let sourceSize = activeInputSize == .zero
-            ? (recordingConfiguration?.outputSize ?? .zero)
-            : activeInputSize
         let lensActive = !appliedLenses.isEmpty
         guard let outputSize = HighDefinitionLensRenderingPolicy.overrideSize(
             enabled: isHighDefinitionLensRenderingEnabled,
             lensActive: lensActive,
-            sourceSize: sourceSize
+            sourceSize: recordingConfiguration?.outputSize ?? cameraKit.activeInput.frameSize
         ) else {
             clearHighDefinitionLensRenderingOverride()
             return
