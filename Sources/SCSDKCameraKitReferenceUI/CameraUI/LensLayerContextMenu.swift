@@ -15,7 +15,7 @@ public enum LensLayerContextMenu {
             isPinnedBase: controller.isPinnedBase(lens),
             hasPinnedBase: controller.pinnedBaseLens != nil,
             pin: { [weak controller] in
-                controller?.pinCurrentLensAsBase()
+                controller?.setCurrentLensAsBase()
             },
             unpin: { [weak controller] in
                 controller?.unpinBaseLens()
@@ -40,9 +40,12 @@ public enum LensLayerContextMenu {
                     unpin()
                 }
             )
-        } else if isCurrent, !hasPinnedBase {
+        } else if isCurrent {
             elements.append(
-                UIAction(title: "Pin as Base Layer", image: UIImage(systemName: "pin")) { _ in
+                UIAction(
+                    title: hasPinnedBase ? "Replace Base Layer" : "Pin as Base Layer",
+                    image: UIImage(systemName: "pin")
+                ) { _ in
                     pin()
                 }
             )

@@ -41,6 +41,19 @@ final class CarouselContextMenuTests: XCTestCase {
         XCTAssertEqual(elements.compactMap { ($0 as? UIAction)?.title }, ["Unpin Base Layer"])
     }
 
+    func testSelectedTopMenuOffersBaseReplacementWhenBaseExists() {
+        let elements = LensLayerContextMenu.makeElements(
+            isCurrent: true,
+            isPinnedBase: false,
+            hasPinnedBase: true,
+            pin: {},
+            unpin: {},
+            supplemental: nil
+        )
+
+        XCTAssertEqual(elements.compactMap { ($0 as? UIAction)?.title }, ["Replace Base Layer"])
+    }
+
     func testUnselectedCloudLensHasNoLayerMenu() {
         let elements = LensLayerContextMenu.makeElements(
             isCurrent: false,

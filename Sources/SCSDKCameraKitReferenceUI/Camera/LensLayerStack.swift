@@ -32,6 +32,15 @@ struct LensLayerStack<Element> {
         return true
     }
 
+    @discardableResult
+    mutating func replaceBaseWithCurrent() -> Bool {
+        guard let selectedTop else { return false }
+
+        pinnedBase = selectedTop
+        self.selectedTop = nil
+        return true
+    }
+
     mutating func unpin() {
         pinnedBase = nil
     }

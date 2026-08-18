@@ -101,6 +101,19 @@ final class LensLayerStackTests: XCTestCase {
         XCTAssertFalse(stack.pinCurrent())
     }
 
+    func testReplacingBasePromotesCurrentTopAndRemovesPreviousBase() {
+        var stack = LensLayerStack<String>()
+
+        stack.select("retouch", matches: ==)
+        XCTAssertTrue(stack.pinCurrent())
+        stack.select("comic", matches: ==)
+
+        XCTAssertTrue(stack.replaceBaseWithCurrent())
+        XCTAssertEqual(stack.pinnedBase, "comic")
+        XCTAssertNil(stack.selectedTop)
+        XCTAssertEqual(stack.applied, ["comic"])
+    }
+
     func testResetClearsEveryLayer() {
         var stack = LensLayerStack<String>()
 

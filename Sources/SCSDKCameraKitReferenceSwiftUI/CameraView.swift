@@ -42,6 +42,7 @@ public struct CameraView: View {
     private let previewMirrored: Bool
     private let showsCaptureChrome: Bool
     private let showsLensCarousel: Bool
+    private let lensCarouselMaximumVisibleItemCount: Int
     private let showsCameraKitControls: Bool
     private let showsChromeVisibilityButton: Bool
     private let recordingPreviewMode: RecordingPreviewMode
@@ -55,6 +56,7 @@ public struct CameraView: View {
         chromeHidden: Binding<Bool> = .constant(false),
         showsCaptureChrome: Bool = true,
         showsLensCarousel: Bool = true,
+        lensCarouselMaximumVisibleItemCount: Int = 5,
         showsCameraKitControls: Bool = true,
         showsChromeVisibilityButton: Bool = true,
         recordingPreviewMode: RecordingPreviewMode = .lens,
@@ -68,6 +70,7 @@ public struct CameraView: View {
         self._chromeHidden = chromeHidden
         self.showsCaptureChrome = showsCaptureChrome
         self.showsLensCarousel = showsLensCarousel
+        self.lensCarouselMaximumVisibleItemCount = lensCarouselMaximumVisibleItemCount
         self.showsCameraKitControls = showsCameraKitControls
         self.showsChromeVisibilityButton = showsChromeVisibilityButton
         self.recordingPreviewMode = recordingPreviewMode
@@ -116,6 +119,7 @@ public struct CameraView: View {
                         availableLenses: $state.lenses,
                         selectedLens: $state.selectedLens,
                         orientation: .vertical,
+                        maximumVisibleItemCount: lensCarouselMaximumVisibleItemCount,
                         cameraController: cameraController,
                         lensContextMenuProvider: lensContextMenuProvider
                     )

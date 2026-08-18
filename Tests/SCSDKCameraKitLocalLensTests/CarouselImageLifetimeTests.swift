@@ -136,6 +136,17 @@ final class CarouselImageLifetimeTests: XCTestCase {
         XCTAssertEqual(collectionView?.bounds.height ?? 0, 342, accuracy: 0.5)
     }
 
+    func testVerticalCarouselCanCapViewportAtFourLensSlots() {
+        let carousel = CarouselView()
+        carousel.frame = CGRect(x: 0, y: 0, width: 62, height: 700)
+        carousel.orientation = .vertical
+        carousel.maximumVisibleItemCount = 4
+        carousel.layoutIfNeeded()
+
+        let collectionView = carousel.subviews.compactMap { $0 as? UICollectionView }.first
+        XCTAssertEqual(collectionView?.bounds.height ?? 0, 272, accuracy: 0.5)
+    }
+
     private func loadImage(at url: URL, with loader: DefaultCarouselImageLoader) throws -> UIImage {
         let loaded = expectation(description: "thumbnail loaded")
         var result: Result<UIImage, Error>?

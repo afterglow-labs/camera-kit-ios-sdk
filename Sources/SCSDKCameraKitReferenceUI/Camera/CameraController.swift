@@ -1126,6 +1126,21 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
+    /// Makes the confirmed current top Lens the base layer, replacing an existing pinned base if necessary.
+    public func setCurrentLensAsBase(completion: ((Bool) -> Void)? = nil) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            guard self.desiredLensStack.replaceBaseWithCurrent() else {
+                completion?(false)
+                return
+            }
+            self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: completion))
+        }
+    }
+
     /// Removes the pinned role. An active top Lens remains as the sole Lens.
     public func unpinBaseLens(completion: ((Bool) -> Void)? = nil) {
         lensQueue.async { [weak self] in

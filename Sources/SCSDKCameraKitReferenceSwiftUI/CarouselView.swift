@@ -14,6 +14,7 @@ public struct CarouselView: UIViewRepresentable {
     @Binding var selectedLens: Lens?
 
     let orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation
+    let maximumVisibleItemCount: Int
     let cameraController: CameraController
     let lensContextMenuProvider: ((Lens) -> UIMenu?)?
 
@@ -21,12 +22,14 @@ public struct CarouselView: UIViewRepresentable {
         availableLenses: Binding<[Lens]>,
         selectedLens: Binding<Lens?>,
         orientation: SCSDKCameraKitReferenceUI.CarouselView.Orientation = .horizontal,
+        maximumVisibleItemCount: Int = 5,
         cameraController: CameraController,
         lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil
     ) {
         self._availableLenses = availableLenses
         self._selectedLens = selectedLens
         self.orientation = orientation
+        self.maximumVisibleItemCount = maximumVisibleItemCount
         self.cameraController = cameraController
         self.lensContextMenuProvider = lensContextMenuProvider
     }
@@ -38,6 +41,7 @@ public struct CarouselView: UIViewRepresentable {
     public func makeUIView(context: Context) -> SCSDKCameraKitReferenceUI.CarouselView {
         let inner = SCSDKCameraKitReferenceUI.CarouselView()
         inner.orientation = orientation
+        inner.maximumVisibleItemCount = maximumVisibleItemCount
         inner.delegate = context.coordinator
         inner.dataSource = context.coordinator
         return inner
@@ -46,6 +50,7 @@ public struct CarouselView: UIViewRepresentable {
     public func updateUIView(_ uiView: SCSDKCameraKitReferenceUI.CarouselView, context: Context) {
         context.coordinator.parent = self
         uiView.orientation = orientation
+        uiView.maximumVisibleItemCount = maximumVisibleItemCount
         let item = context.coordinator.item(for: selectedLens)
         if context.coordinator.availableLenses.map(\.id) != availableLenses.map(\.id) {
             context.coordinator.availableLenses = availableLenses
