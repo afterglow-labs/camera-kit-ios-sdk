@@ -250,7 +250,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
 
         cameraView.cameraActionsView.flashActionView.toggleButton.isSelected = controller.flashState != .off
         cameraView.cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
-            controller.isHighDefinitionLensRenderingEnabled
+            controller.isHighDefinitionModeEnabled
         cameraView.cameraActionsView.retouchActionView.isHidden = !controller.isRetouchAvailable
         cameraView.cameraActionsView.retouchActionView.toggleButton.isSelected = controller.isRetouchEnabled
         cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !controller.isRhinoplastyAvailable
@@ -477,12 +477,12 @@ extension CameraViewController {
     private func setupHighDefinitionRenderingButton() {
         let action = cameraView.cameraActionsView.highDefinitionActionView
         action.isHidden = !cameraController.supportsHighDefinitionLensRendering
-        action.toggleButton.isSelected = cameraController.isHighDefinitionLensRenderingEnabled
+        action.toggleButton.isSelected = cameraController.isHighDefinitionModeEnabled
         action.enableAction = { [weak cameraController] in
-            cameraController?.setHighDefinitionLensRenderingEnabled(true)
+            cameraController?.setHighDefinitionModeEnabled(true)
         }
         action.disableAction = { [weak cameraController] in
-            cameraController?.setHighDefinitionLensRenderingEnabled(false)
+            cameraController?.setHighDefinitionModeEnabled(false)
         }
     }
 }

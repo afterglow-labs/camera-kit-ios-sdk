@@ -12,7 +12,7 @@
 "camera_kit_camera_flip_button" = "Camera Flip Button";
 "camera_kit_flash_configuration_button" = "Flash Configuration Button";
 "camera_kit_flash_toggle_button" = "Flash Toggle Button";
-"camera_kit_high_definition_rendering_toggle_button" = "HD Lens Rendering Toggle Button";
+"camera_kit_high_definition_rendering_toggle_button" = "HD Mode Toggle Button";
 "camera_kit_portrait_adjustment_toggle_button" = "Portrait Adjustment Toggle Button";
 "camera_kit_portrait_adjustment_configuration_button" = "Portrait Adjustment Configuration Button";
 "camera_kit_tone_map_adjustment_toggle_button" = "Tone Map Adjustment Toggle Button";

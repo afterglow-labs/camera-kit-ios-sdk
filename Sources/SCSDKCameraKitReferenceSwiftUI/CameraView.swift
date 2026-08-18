@@ -614,10 +614,10 @@ private final class InclusiveCameraControlsView: UIView {
         }
 
         cameraActionsView.highDefinitionActionView.enableAction = { [weak cameraController] in
-            cameraController?.setHighDefinitionLensRenderingEnabled(true)
+            cameraController?.setHighDefinitionModeEnabled(true)
         }
         cameraActionsView.highDefinitionActionView.disableAction = { [weak cameraController] in
-            cameraController?.setHighDefinitionLensRenderingEnabled(false)
+            cameraController?.setHighDefinitionModeEnabled(false)
         }
 
         cameraActionsView.retouchActionView.enableAction = { [weak cameraController] in
@@ -644,7 +644,7 @@ private final class InclusiveCameraControlsView: UIView {
         flashControlView.ringLightColorSelectionView.selectColor(cameraController.ringLightColor)
         cameraActionsView.flashActionView.toggleButton.isSelected = cameraController.flashState != .off
         cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
-            cameraController.isHighDefinitionLensRenderingEnabled
+            cameraController.isHighDefinitionModeEnabled
         cameraActionsView.retouchActionView.toggleButton.isSelected = cameraController.isRetouchEnabled
         cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
         syncAdjustment(

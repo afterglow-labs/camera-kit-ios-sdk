@@ -233,7 +233,7 @@ extension CameraViewState: CameraControllerUIDelegate {
         ringLightColor = controller.ringLightColor
         toneMapAmount = controller.toneMapAdjustmentAmount
         portraitBlur = controller.portraitAdjustmentBlur
-        highDefinitionRenderingEnabled = controller.isHighDefinitionLensRenderingEnabled
+        highDefinitionRenderingEnabled = controller.isHighDefinitionModeEnabled
         retouchAvailable = controller.isRetouchAvailable
         retouchEnabled = controller.isRetouchEnabled
         rhinoplastyAvailable = controller.isRhinoplastyAvailable

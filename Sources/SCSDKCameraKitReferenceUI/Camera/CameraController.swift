@@ -122,6 +122,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// An output used for taking still photos.
     public private(set) var photoCaptureOutput: PhotoCaptureOutput?
+    private var nativePhotoCaptureOutput: AVCapturePhotoOutput?
 
     /// An output used for recording videos.
     public var recorder: Recorder?
@@ -136,6 +137,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Whether the native runtime currently has a high-definition rendering override applied.
     public private(set) var isHighDefinitionLensRenderingActive = false
+
+    /// The confirmed Lens rendering dimensions applied by HD mode.
+    public private(set) var highDefinitionLensRenderingSize: CGSize?
+
+    /// Whether the complete high-definition camera mode is requested.
+    public var isHighDefinitionModeEnabled: Bool {
+        isHighDefinitionLensRenderingEnabled
+    }
 
     /// An output used for live web preview streaming.
     public private(set) var streamOutput: CameraKitWebSocketStreamOutput?
@@ -409,6 +418,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 cameraKit.remove(output: photoCaptureOutput)
                 self.photoCaptureOutput = nil
             }
+            self.nativePhotoCaptureOutput = nil
             cameraKit.activeInput.stopRunning()
             cameraKit.stop {
                 self.lensQueue.async {
@@ -608,6 +618,9 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     open func takePhoto(completion: ((UIImage?, Error?) -> Void)?) {
         let settings = AVCapturePhotoSettings()
         settings.flashMode = flashState.captureDeviceFlashMode
+        if isHighDefinitionModeEnabled {
+            settings.photoQualityPrioritization = .quality
+        }
 
         photoCaptureOutput?.capture(
             with: settings,
@@ -629,6 +642,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         if captureSession.canAddOutput(avPhotoCaptureOutput) {
             captureSession.addOutput(avPhotoCaptureOutput)
         }
+        nativePhotoCaptureOutput = avPhotoCaptureOutput
+        updatePhotoQualityPrioritization()
         photoCaptureOutput = PhotoCaptureOutput(capturePhotoOutput: avPhotoCaptureOutput)
         if let photoCaptureOutput {
             cameraKit.add(output: photoCaptureOutput)
@@ -837,7 +852,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private func resolvedRecordingSetup() -> RecordingSetup {
         let configured = recordingConfiguration ?? RecordingConfiguration(
             outputSize: cameraKit.activeInput.frameSize,
-            framesPerSecond: 30
+            framesPerSecond: 30,
+            highDefinitionModeEnabled: isHighDefinitionModeEnabled
         )
         let inputSize = cameraKit.activeInput.frameSize
         let sourceSize = inputSize == .zero ? configured.outputSize : inputSize
@@ -882,6 +898,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 + "lensActive=\(setup.lensActive) "
                 + "output=\(Int(setup.configuration.outputSize.width))x\(Int(setup.configuration.outputSize.height)) "
                 + "codec=\(setup.configuration.videoCodec.rawValue) "
+                + "bitrate=\(setup.configuration.videoBitRate) "
                 + "hdRequested=\(isHighDefinitionLensRenderingEnabled) "
                 + "hdRuntime=\(isHighDefinitionLensRenderingActive)"
         )
@@ -896,7 +913,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func refreshHighDefinitionLensRendering() {
-        let sourceSize = recordingConfiguration?.outputSize ?? cameraKit.activeInput.frameSize
+        let activeInputSize = cameraKit.activeInput.frameSize
+        let sourceSize = activeInputSize == .zero
+            ? (recordingConfiguration?.outputSize ?? .zero)
+            : activeInputSize
         let lensActive = !appliedLenses.isEmpty
         guard let outputSize = HighDefinitionLensRenderingPolicy.overrideSize(
             enabled: isHighDefinitionLensRenderingEnabled,
@@ -912,12 +932,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             Int(outputSize.width),
             Int(outputSize.height)
         )
+        highDefinitionLensRenderingSize = isHighDefinitionLensRenderingActive ? outputSize : nil
     }
 
     private func clearHighDefinitionLensRenderingOverride() {
         guard isHighDefinitionLensRenderingActive else { return }
         _ = SCCameraKitSetHighDefinitionRenderingResolution(cameraKit.lenses.processor, 0, 0)
         isHighDefinitionLensRenderingActive = false
+        highDefinitionLensRenderingSize = nil
     }
 
     // MARK: Live Streaming
@@ -992,10 +1014,16 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     /// Configures the post-Lens pixel dimensions and frame rate used by subsequent recordings.
-    open func setRecordingConfiguration(outputSize: CGSize, framesPerSecond: Int) {
+    open func setRecordingConfiguration(
+        outputSize: CGSize,
+        framesPerSecond: Int,
+        videoBitRate: Int? = nil
+    ) {
         recordingConfiguration = RecordingConfiguration(
             outputSize: outputSize,
-            framesPerSecond: framesPerSecond
+            framesPerSecond: framesPerSecond,
+            videoBitRate: videoBitRate,
+            highDefinitionModeEnabled: isHighDefinitionModeEnabled
         )
         refreshHighDefinitionLensRendering()
     }
@@ -1006,18 +1034,30 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         refreshHighDefinitionLensRendering()
     }
 
-    /// Enables or disables Camera Kit's native high-definition Lens rendering override.
-    ///
-    /// The runtime override is applied only while at least one Lens is active.
-    open func setHighDefinitionLensRenderingEnabled(_ enabled: Bool) {
+    /// Enables or disables native HD capture policy, photo quality, recording bitrate, and Lens rendering.
+    open func setHighDefinitionModeEnabled(_ enabled: Bool) {
         guard isHighDefinitionLensRenderingEnabled != enabled else {
+            updatePhotoQualityPrioritization()
             refreshHighDefinitionLensRendering()
             return
         }
 
         isHighDefinitionLensRenderingEnabled = enabled
+        recordingConfiguration = recordingConfiguration?.replacingHighDefinitionModeEnabled(enabled)
+        updatePhotoQualityPrioritization()
         refreshHighDefinitionLensRendering()
         notifyControlsDidChange()
+    }
+
+    /// Compatibility entry point for hosts built against the original HD Lens-rendering toggle.
+    open func setHighDefinitionLensRenderingEnabled(_ enabled: Bool) {
+        setHighDefinitionModeEnabled(enabled)
+    }
+
+    private func updatePhotoQualityPrioritization() {
+        nativePhotoCaptureOutput?.maxPhotoQualityPrioritization = isHighDefinitionModeEnabled
+            ? .quality
+            : .balanced
     }
     
     public func warmupLens(_ lens: Lens, completion: ((Bool) -> Void)? = nil) {

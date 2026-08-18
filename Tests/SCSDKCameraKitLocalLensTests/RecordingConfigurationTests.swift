@@ -54,6 +54,44 @@ final class RecordingConfigurationTests: XCTestCase {
         XCTAssertEqual(compression?[AVVideoAverageBitRateKey] as? Int, 99_532_800)
     }
 
+    func testHighDefinitionModeRaisesAutomatic1080pThirtyBitRate() {
+        let standard = RecordingConfiguration(
+            outputSize: CGSize(width: 1_080, height: 1_920),
+            framesPerSecond: 30
+        )
+        let highDefinition = RecordingConfiguration(
+            outputSize: CGSize(width: 1_080, height: 1_920),
+            framesPerSecond: 30,
+            highDefinitionModeEnabled: true
+        )
+
+        XCTAssertEqual(standard.videoBitRate, 12_441_600)
+        XCTAssertEqual(highDefinition.videoBitRate, 16_000_000)
+    }
+
+    func testManualBitRateRemainsAuthoritativeInHighDefinitionMode() {
+        let configuration = RecordingConfiguration(
+            outputSize: CGSize(width: 1_080, height: 1_920),
+            framesPerSecond: 30,
+            videoBitRate: 30_000_000,
+            highDefinitionModeEnabled: true
+        )
+
+        XCTAssertEqual(configuration.videoBitRate, 30_000_000)
+    }
+
+    func testReplacingOutputSizePreservesHighDefinitionBitRatePolicy() {
+        let configuration = RecordingConfiguration(
+            outputSize: CGSize(width: 720, height: 1_280),
+            framesPerSecond: 30,
+            highDefinitionModeEnabled: true
+        )
+
+        let promoted = configuration.replacingOutputSize(CGSize(width: 1_080, height: 1_920))
+
+        XCTAssertEqual(promoted.videoBitRate, 16_000_000)
+    }
+
     func testCameraRecordingUsesTheSelectedHEVCCodec() {
         let configuration = RecordingConfiguration(
             outputSize: CGSize(width: 1_080, height: 1_920),
@@ -195,5 +233,56 @@ final class RecordingConfigurationTests: XCTestCase {
             ),
             sourceSize
         )
+    }
+
+    func testHighDefinitionCameraFormatPromotesNative720pTo1080p() {
+        let preferred = HighDefinitionCameraFormatPolicy.preferredDimensions(
+            requested: CGSize(width: 1_280, height: 720),
+            available: [
+                CGSize(width: 1_280, height: 720),
+                CGSize(width: 1_920, height: 1_080),
+                CGSize(width: 3_840, height: 2_160),
+            ]
+        )
+
+        XCTAssertEqual(preferred, CGSize(width: 1_920, height: 1_080))
+    }
+
+    func testHighDefinitionCameraFormatPromotesFourByThreeToNative1440p() {
+        let preferred = HighDefinitionCameraFormatPolicy.preferredDimensions(
+            requested: CGSize(width: 1_280, height: 960),
+            available: [
+                CGSize(width: 1_280, height: 960),
+                CGSize(width: 1_920, height: 1_080),
+                CGSize(width: 1_920, height: 1_440),
+            ]
+        )
+
+        XCTAssertEqual(preferred, CGSize(width: 1_920, height: 1_440))
+    }
+
+    func testHighDefinitionCameraFormatDoesNotFakeAnUnsupportedAspectRatio() {
+        let preferred = HighDefinitionCameraFormatPolicy.preferredDimensions(
+            requested: CGSize(width: 1_280, height: 960),
+            available: [
+                CGSize(width: 1_280, height: 960),
+                CGSize(width: 1_920, height: 1_080),
+            ]
+        )
+
+        XCTAssertNil(preferred)
+    }
+
+    func testHighDefinitionCameraFormatKeepsAnAlreadyHighDefinitionNativeFormat() {
+        let preferred = HighDefinitionCameraFormatPolicy.preferredDimensions(
+            requested: CGSize(width: 1_920, height: 1_080),
+            available: [
+                CGSize(width: 1_280, height: 720),
+                CGSize(width: 1_920, height: 1_080),
+                CGSize(width: 3_840, height: 2_160),
+            ]
+        )
+
+        XCTAssertEqual(preferred, CGSize(width: 1_920, height: 1_080))
     }
 }
