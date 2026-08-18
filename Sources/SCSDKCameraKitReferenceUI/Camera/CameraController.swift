@@ -1026,6 +1026,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Refreshes Camera Kit's cached input dimensions after the host changes AVCaptureDevice.activeFormat.
     open func refreshActiveInputAttributes() {
+        // Camera Kit declares activeInput as nonnull, but it is not initialized until start() completes.
+        guard captureSession.isRunning else { return }
         cameraKit.activeInput.setVideoOrientation(configuredOrientation)
         refreshHighDefinitionLensRendering()
     }
