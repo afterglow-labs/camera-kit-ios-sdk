@@ -13,7 +13,7 @@ final class RecordingConfigurationTests: XCTestCase {
         XCTAssertFalse(CameraKitAudioSession.options.contains(.allowBluetoothHFP))
     }
 
-    func testRecorderUsesCameraKitNativeWriterOutput() throws {
+    func testRecorderDoesNotUseCameraKitWriterThatDropsBackpressuredSamples() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("mp4")
@@ -28,7 +28,7 @@ final class RecordingConfigurationTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(String(describing: type(of: recorder.output)), "SCCameraKitAVWriterOutput")
+        XCTAssertEqual(String(describing: type(of: recorder.output)), "CameraKitRecordingOutput")
     }
 
     func testFullScreenFourKOutputKeepsTheSelectedLongEdgeAndEvenDimensions() {
