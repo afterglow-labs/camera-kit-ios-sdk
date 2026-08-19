@@ -31,6 +31,29 @@ final class RecordingConfigurationTests: XCTestCase {
         XCTAssertEqual(String(describing: type(of: recorder.output)), "CameraKitRecordingOutput")
     }
 
+    func testBackpressuredVideoFrameDoesNotRetainCameraKitsPixelMemory() throws {
+        var source: CVPixelBuffer?
+        XCTAssertEqual(
+            CVPixelBufferCreate(
+                kCFAllocatorDefault,
+                4,
+                4,
+                kCVPixelFormatType_32BGRA,
+                nil,
+                &source
+            ),
+            kCVReturnSuccess
+        )
+        let sourceBuffer = try XCTUnwrap(source)
+        fill(pixelBuffer: sourceBuffer, with: 0x11)
+
+        let ownedBuffer = try XCTUnwrap(RecordingPixelBufferCopy.makeOwnedCopy(of: sourceBuffer))
+        fill(pixelBuffer: sourceBuffer, with: 0x22)
+
+        XCTAssertEqual(firstByte(in: ownedBuffer), 0x11)
+        XCTAssertEqual(firstByte(in: sourceBuffer), 0x22)
+    }
+
     func testFullScreenFourKOutputKeepsTheSelectedLongEdgeAndEvenDimensions() {
         let outputSize = OutputSizeHelper.normalizedSize(
             for: CGSize(width: 2_160, height: 3_840),
@@ -320,5 +343,21 @@ final class RecordingConfigurationTests: XCTestCase {
         )
 
         XCTAssertEqual(preferred, CGSize(width: 1_920, height: 1_080))
+    }
+
+    private func fill(pixelBuffer: CVPixelBuffer, with byte: UInt8) {
+        XCTAssertEqual(CVPixelBufferLockBaseAddress(pixelBuffer, []), kCVReturnSuccess)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            XCTFail("Pixel buffer has no base address")
+            return
+        }
+        memset(baseAddress, Int32(byte), CVPixelBufferGetDataSize(pixelBuffer))
+    }
+
+    private func firstByte(in pixelBuffer: CVPixelBuffer) -> UInt8? {
+        XCTAssertEqual(CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly), kCVReturnSuccess)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        return CVPixelBufferGetBaseAddress(pixelBuffer)?.assumingMemoryBound(to: UInt8.self).pointee
     }
 }

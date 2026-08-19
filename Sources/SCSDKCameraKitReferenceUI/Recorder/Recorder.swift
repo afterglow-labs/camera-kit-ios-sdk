@@ -4,6 +4,80 @@ import AVFoundation
 import SCSDKCameraKit
 import UIKit
 
+enum RecordingPixelBufferCopy {
+    static func makeOwnedCopy(of source: CVPixelBuffer) -> CVPixelBuffer? {
+        var destination: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            CVPixelBufferGetWidth(source),
+            CVPixelBufferGetHeight(source),
+            CVPixelBufferGetPixelFormatType(source),
+            nil,
+            &destination
+        )
+        guard status == kCVReturnSuccess, let destination else { return nil }
+
+        let sourceLockStatus = CVPixelBufferLockBaseAddress(source, .readOnly)
+        guard sourceLockStatus == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(source, .readOnly) }
+
+        let destinationLockStatus = CVPixelBufferLockBaseAddress(destination, [])
+        guard destinationLockStatus == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(destination, []) }
+
+        let sourcePlaneCount = CVPixelBufferGetPlaneCount(source)
+        let destinationPlaneCount = CVPixelBufferGetPlaneCount(destination)
+        guard sourcePlaneCount == destinationPlaneCount else { return nil }
+
+        if sourcePlaneCount == 0 {
+            guard copyRows(
+                sourceBaseAddress: CVPixelBufferGetBaseAddress(source),
+                sourceBytesPerRow: CVPixelBufferGetBytesPerRow(source),
+                sourceHeight: CVPixelBufferGetHeight(source),
+                destinationBaseAddress: CVPixelBufferGetBaseAddress(destination),
+                destinationBytesPerRow: CVPixelBufferGetBytesPerRow(destination),
+                destinationHeight: CVPixelBufferGetHeight(destination)
+            ) else { return nil }
+        } else {
+            for plane in 0..<sourcePlaneCount {
+                guard copyRows(
+                    sourceBaseAddress: CVPixelBufferGetBaseAddressOfPlane(source, plane),
+                    sourceBytesPerRow: CVPixelBufferGetBytesPerRowOfPlane(source, plane),
+                    sourceHeight: CVPixelBufferGetHeightOfPlane(source, plane),
+                    destinationBaseAddress: CVPixelBufferGetBaseAddressOfPlane(destination, plane),
+                    destinationBytesPerRow: CVPixelBufferGetBytesPerRowOfPlane(destination, plane),
+                    destinationHeight: CVPixelBufferGetHeightOfPlane(destination, plane)
+                ) else { return nil }
+            }
+        }
+
+        CVBufferPropagateAttachments(source, destination)
+        return destination
+    }
+
+    private static func copyRows(
+        sourceBaseAddress: UnsafeMutableRawPointer?,
+        sourceBytesPerRow: Int,
+        sourceHeight: Int,
+        destinationBaseAddress: UnsafeMutableRawPointer?,
+        destinationBytesPerRow: Int,
+        destinationHeight: Int
+    ) -> Bool {
+        guard let sourceBaseAddress, let destinationBaseAddress else { return false }
+        let bytesPerRow = min(sourceBytesPerRow, destinationBytesPerRow)
+        let rowCount = min(sourceHeight, destinationHeight)
+        for row in 0..<rowCount {
+            destinationBaseAddress
+                .advanced(by: row * destinationBytesPerRow)
+                .copyMemory(
+                    from: sourceBaseAddress.advanced(by: row * sourceBytesPerRow),
+                    byteCount: bytesPerRow
+                )
+        }
+        return true
+    }
+}
+
 /// Records Camera Kit's processed video and audio without dropping media during writer backpressure.
 public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPixelBuffer {
     private enum State {
@@ -17,6 +91,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         case writerDidNotStart(Error?)
         case noVideoSamples
         case invalidSample(mediaType: String)
+        case pixelBufferCopyFailed
         case appendFailed(mediaType: String, underlying: Error?)
 
         var errorDescription: String? {
@@ -27,31 +102,33 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
                 return "Camera Kit did not produce a video sample for this recording."
             case let .invalidSample(mediaType):
                 return "Camera Kit produced an invalid \(mediaType) sample."
+            case .pixelBufferCopyFailed:
+                return "The recorder could not detach a backpressured video frame from Camera Kit."
             case let .appendFailed(mediaType, underlying):
                 return "The \(mediaType) encoder rejected media: \(underlying?.localizedDescription ?? "unknown error")"
             }
         }
     }
 
-    private struct SampleBufferQueue {
-        private var storage: [CMSampleBuffer] = []
+    private struct FIFOQueue<Element> {
+        private var storage: [Element] = []
         private var head = 0
 
         var isEmpty: Bool { head == storage.count }
         var count: Int { storage.count - head }
-        var first: CMSampleBuffer? { isEmpty ? nil : storage[head] }
+        var first: Element? { isEmpty ? nil : storage[head] }
 
-        mutating func append(_ sampleBuffer: CMSampleBuffer) {
-            storage.append(sampleBuffer)
+        mutating func append(_ element: Element) {
+            storage.append(element)
         }
 
         @discardableResult
-        mutating func popFirst() -> CMSampleBuffer? {
+        mutating func popFirst() -> Element? {
             guard !isEmpty else { return nil }
-            let sampleBuffer = storage[head]
+            let element = storage[head]
             head += 1
             compactIfNeeded()
-            return sampleBuffer
+            return element
         }
 
         mutating func removeAll() {
@@ -64,6 +141,12 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             storage.removeFirst(head)
             head = 0
         }
+    }
+
+    private struct VideoFrame {
+        let pixelBuffer: CVPixelBuffer
+        let presentationTime: CMTime
+        let endTime: CMTime
     }
 
     public weak var delegate: SCCameraKitOutputRequiringPixelBufferDelegate?
@@ -95,8 +178,8 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
     private var firstVideoPresentationTime: CMTime?
     private var lastVideoEndTime: CMTime?
     private var lastAudioEndTime: CMTime?
-    private var pendingVideoBuffers = SampleBufferQueue()
-    private var pendingAudioBuffers = SampleBufferQueue()
+    private var pendingVideoFrames = FIFOQueue<VideoFrame>()
+    private var pendingAudioBuffers = FIFOQueue<CMSampleBuffer>()
     private var recordingFailure: Error?
     private var videoInputFinished = false
     private var audioInputFinished = false
@@ -219,7 +302,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             callbackLock.unlock()
             return
         }
-        mediaQueue.async { [self, sampleBuffer] in
+        mediaQueue.sync { [self] in
             enqueueVideo(sampleBuffer)
         }
         callbackLock.unlock()
@@ -250,7 +333,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         guard recordingFailure == nil else { return }
         receivedVideoBuffers += 1
 
-        guard CMSampleBufferGetImageBuffer(sampleBuffer) != nil else {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             recordingFailure = RecordingFailure.invalidSample(mediaType: "video")
             return
         }
@@ -267,8 +350,37 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             firstVideoPresentationTime = presentationTime
         }
 
-        pendingVideoBuffers.append(sampleBuffer)
-        drainVideoBuffers()
+        let endTime = sampleEndTime(
+            sampleBuffer,
+            fallbackDuration: CMTime(
+                value: 1,
+                timescale: CMTimeScale(max(configuration.framesPerSecond, 1))
+            )
+        )
+
+        drainVideoFrames()
+        if pendingVideoFrames.isEmpty, videoInput.isReadyForMoreMediaData {
+            appendVideoToWriter(
+                VideoFrame(
+                    pixelBuffer: pixelBuffer,
+                    presentationTime: presentationTime,
+                    endTime: endTime
+                )
+            )
+        } else {
+            guard let ownedPixelBuffer = RecordingPixelBufferCopy.makeOwnedCopy(of: pixelBuffer) else {
+                recordingFailure = RecordingFailure.pixelBufferCopyFailed
+                return
+            }
+            pendingVideoFrames.append(
+                VideoFrame(
+                    pixelBuffer: ownedPixelBuffer,
+                    presentationTime: presentationTime,
+                    endTime: endTime
+                )
+            )
+            drainVideoFrames()
+        }
         drainAudioBuffers()
     }
 
@@ -279,35 +391,22 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         drainAudioBuffers()
     }
 
-    private func drainVideoBuffers() {
+    private func drainVideoFrames() {
         while recordingFailure == nil,
               videoInput.isReadyForMoreMediaData,
-              let sampleBuffer = pendingVideoBuffers.first {
-            _ = pendingVideoBuffers.popFirst()
-            appendVideoToWriter(sampleBuffer)
+              let frame = pendingVideoFrames.popFirst() {
+            appendVideoToWriter(frame)
         }
     }
 
-    private func appendVideoToWriter(_ sampleBuffer: CMSampleBuffer) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            recordingFailure = RecordingFailure.invalidSample(mediaType: "video")
-            return
-        }
-
-        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        guard pixelBufferInput.append(pixelBuffer, withPresentationTime: presentationTime) else {
+    private func appendVideoToWriter(_ frame: VideoFrame) {
+        guard pixelBufferInput.append(frame.pixelBuffer, withPresentationTime: frame.presentationTime) else {
             recordingFailure = RecordingFailure.appendFailed(mediaType: "video", underlying: writer.error)
             return
         }
 
         writtenVideoBuffers += 1
-        lastVideoEndTime = sampleEndTime(
-            sampleBuffer,
-            fallbackDuration: CMTime(
-                value: 1,
-                timescale: CMTimeScale(max(configuration.framesPerSecond, 1))
-            )
-        )
+        lastVideoEndTime = frame.endTime
     }
 
     private func drainAudioBuffers() {
@@ -349,18 +448,18 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             return
         }
 
-        drainVideoBuffers()
+        drainVideoFrames()
         drainAudioBuffers()
         guard recordingFailure == nil else {
             cancelAndComplete(error: recordingFailure)
             return
         }
 
-        if pendingVideoBuffers.isEmpty {
+        if pendingVideoFrames.isEmpty {
             markVideoInputFinished()
         } else {
             videoInput.requestMediaDataWhenReady(on: mediaQueue) { [weak self] in
-                self?.drainVideoBuffersForFinish()
+                self?.drainVideoFramesForFinish()
             }
         }
 
@@ -375,14 +474,14 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         finishWriterIfReady()
     }
 
-    private func drainVideoBuffersForFinish() {
+    private func drainVideoFramesForFinish() {
         guard !writerFinishStarted else { return }
-        drainVideoBuffers()
+        drainVideoFrames()
         guard recordingFailure == nil else {
             cancelAndComplete(error: recordingFailure)
             return
         }
-        guard pendingVideoBuffers.isEmpty else { return }
+        guard pendingVideoFrames.isEmpty else { return }
         markVideoInputFinished()
         finishWriterIfReady()
     }
@@ -429,7 +528,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
     private func cancelAndComplete(error: Error?) {
         guard !writerFinishStarted else { return }
         writerFinishStarted = true
-        pendingVideoBuffers.removeAll()
+        pendingVideoFrames.removeAll()
         pendingAudioBuffers.removeAll()
         writer.cancelWriting()
         complete(url: nil, error: error ?? writer.error)
