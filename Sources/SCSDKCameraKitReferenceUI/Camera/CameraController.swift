@@ -96,6 +96,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// A capture session we'll use for camera input.
     public let captureSession: AVCaptureSession
 
+    /// Whether Camera Kit is using a caller-supplied frame source instead of an AVCaptureDevice.
+    public var usesExternalInput: Bool { configuredExternalInput != nil }
+
+    /// Whether controls that mutate the local AVCaptureDevice are available.
+    public var supportsCameraDeviceControls: Bool { !usesExternalInput }
+
     private let captureSessionQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.capture-session")
     private let prefetchResourceQueue = DispatchQueue(label: "com.snap.camerakit.reference-ui.prefetch-resources")
     private var configuredOrientation: AVCaptureVideoOrientation = .portrait
@@ -104,6 +110,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var activePrefetchGroupIDs: Set<String> = []
     private var prefetchTasksByGroupID: [String: LensPrefetcherTask] = [:]
     private var prefetchedLensesByGroupID: [String: [Lens]] = [:]
+    private let configuredExternalInput: Input?
+    private var cameraKitStarted = false
 
     /// The CameraKit session
     public let cameraKit: CameraKitProtocol
@@ -112,6 +120,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     public private(set) var cameraPosition: AVCaptureDevice.Position = .front {
         didSet {
             cameraKit.cameraPosition = cameraPosition
+            guard supportsCameraDeviceControls else { return }
             captureSessionQueue.async { [weak self] in
                 self?.replaceVideoInputIfNeeded(for: self?.cameraPosition ?? .front)
             }
@@ -346,7 +355,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// and CameraKit session with the specified configuration and list of group IDs.
     /// - Parameter sessionConfig: Config to configure session with application id and api token.
     /// Pass this in if you wish to dynamically update or overwrite the application id and api token in the application's `Info.plist`.
-    public convenience init(sessionConfig: SessionConfig? = nil) {
+    public convenience init(
+        sessionConfig: SessionConfig? = nil,
+        externalInput: Input? = nil,
+        cameraPosition: AVCaptureDevice.Position = .front
+    ) {
         // this is how you configure properties for a CameraKit Session
         // max size of lens content cache = 150 * 1024 * 1024 = 150MB
         // 150MB to make sure that some lenses that use large assets such as the ones required for
@@ -355,17 +368,30 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         let lensesConfig = LensesConfig(cacheConfig: CacheConfig(lensContentMaxSize: 150 * 1024 * 1024))
         let cameraKit = Session(sessionConfig: sessionConfig, lensesConfig: lensesConfig, errorHandler: nil)
         let captureSession = AVCaptureSession()
-        self.init(cameraKit: cameraKit, captureSession: captureSession)
+        self.init(
+            cameraKit: cameraKit,
+            captureSession: captureSession,
+            externalInput: externalInput,
+            cameraPosition: cameraPosition
+        )
     }
 
     /// Init with camera kit session, capture session, and lens holder
     /// - Parameters:
     ///   - cameraKit: camera kit session
     ///   - captureSession: avcapturesession
-    public init(cameraKit: CameraKitProtocol, captureSession: AVCaptureSession) {
+    public init(
+        cameraKit: CameraKitProtocol,
+        captureSession: AVCaptureSession,
+        externalInput: Input? = nil,
+        cameraPosition: AVCaptureDevice.Position = .front
+    ) {
         self.cameraKit = cameraKit
         self.captureSession = captureSession
+        configuredExternalInput = externalInput
+        self.cameraPosition = cameraPosition
         super.init()
+        cameraKit.cameraPosition = cameraPosition
         lensQueue.setSpecific(key: lensQueueKey, value: ())
     }
 
@@ -386,6 +412,20 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         configuredTextInputContextProvider = textInputContextProvider
         configuredAgreementsPresentationContextProvider = agreementsPresentationContextProvider
         configureNotifications()
+        if usesExternalInput {
+            captureSessionQueue.async { [self] in
+                configurePhotoCapture()
+                configureLensesOnCaptureSessionQueue(
+                    orientation: orientation,
+                    textInputContextProvider: textInputContextProvider,
+                    agreementsPresentationContextProvider: agreementsPresentationContextProvider
+                )
+                DispatchQueue.main.async {
+                    completion?()
+                }
+            }
+            return
+        }
         promptForAccessIfNeeded { [self] in
             captureSessionQueue.async { [self] in
                 configureCaptureSession()
@@ -430,8 +470,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 self.photoCaptureOutput = nil
             }
             self.nativePhotoCaptureOutput = nil
-            cameraKit.activeInput.stopRunning()
+            if cameraKitStarted {
+                cameraKit.activeInput.stopRunning()
+            }
             cameraKit.stop {
+                self.cameraKitStarted = false
                 self.lensQueue.async {
                     self.desiredLensStack.reset()
                     self.activeLensStack.reset()
@@ -491,7 +534,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         let dataProvider = configureDataProvider()
         // Create CameraKit inputs off the main thread. AVSessionInput may touch AVCaptureSession internals
         // during initialization, and AVCaptureSession startRunning must not happen on the main thread.
-        let input = AVSessionInput(session: captureSession)
+        let input = configuredExternalInput ?? AVSessionInput(session: captureSession)
         let arInput = ARSessionInput()
 
         // Start the actual CameraKit session. Once the session is started, CameraKit will begin processing frames and
@@ -500,13 +543,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         cameraKit.start(
             input: input,
             arInput: arInput,
-            cameraPosition: .front,
+            cameraPosition: cameraPosition,
             videoOrientation: orientation,
             dataProvider: dataProvider,
             hintDelegate: self,
             textInputContextProvider: textInputContextProvider,
             agreementsPresentationContextProvider: agreementsPresentationContextProvider
         )
+        cameraKitStarted = true
 
         // Start the capture session. It's important you start the capture session after starting the CameraKit session
         // because the CameraKit input and session configures the capture session implicitly and you may run into a
@@ -552,6 +596,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Flips the camera to the other side
     public func flipCamera() {
+        guard supportsCameraDeviceControls else { return }
         cameraPosition = cameraPosition == .front ? .back : .front
         updateFlashAfterFlip()
         notifyControlsDidChange()
@@ -630,7 +675,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// - Parameter completion: completion to be called with the photo or an error.
     open func takePhoto(completion: ((UIImage?, Error?) -> Void)?) {
         let settings = AVCapturePhotoSettings()
-        settings.flashMode = flashState.captureDeviceFlashMode
+        settings.flashMode = supportsCameraDeviceControls ? flashState.captureDeviceFlashMode : .off
         if isHighDefinitionModeEnabled {
             settings.photoQualityPrioritization = .quality
         }
@@ -640,7 +685,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             outputSize: OutputSizeHelper.normalizedSize(
                 for: cameraKit.activeInput.frameSize,
                 aspectRatio: resolvedCaptureAspectRatio
-            )
+            ),
+            usePixelBuffer: usesExternalInput
         ) { image, error in
             completion?(image, error)
         }
@@ -650,10 +696,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     fileprivate func configurePhotoCapture() {
         guard photoCaptureOutput == nil else { return }
 
-        // Add AVCapturePhotoOutput to capture session
-        let avPhotoCaptureOutput = AVCapturePhotoOutput()
-        if captureSession.canAddOutput(avPhotoCaptureOutput) {
-            captureSession.addOutput(avPhotoCaptureOutput)
+        var avPhotoCaptureOutput: AVCapturePhotoOutput?
+        if supportsCameraDeviceControls {
+            let output = AVCapturePhotoOutput()
+            if captureSession.canAddOutput(output) {
+                captureSession.addOutput(output)
+                avPhotoCaptureOutput = output
+            }
         }
         nativePhotoCaptureOutput = avPhotoCaptureOutput
         updatePhotoQualityPrioritization()
@@ -793,18 +842,17 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Begin recording video.
     open func startRecording() {
-        guard let device = cameraInputDevice else {
-            return
-        }
-        do {
-            try device.lockForConfiguration()
-            if device.isTorchModeSupported(flashState.captureDeviceTorchMode) {
-                device.torchMode = flashState.captureDeviceTorchMode
+        if let device = cameraInputDevice {
+            do {
+                try device.lockForConfiguration()
+                if device.isTorchModeSupported(flashState.captureDeviceTorchMode) {
+                    device.torchMode = flashState.captureDeviceTorchMode
+                }
+                device.unlockForConfiguration()
+            } catch {
+                print("[CameraKit] Failed to lock device for configuration when trying to configure torch mode.")
+                return
             }
-            device.unlockForConfiguration()
-        } catch {
-            print("[CameraKit] Failed to lock device for configuration when trying to configure torch mode.")
-            return
         }
 
         uiDelegate?.cameraControllerRequestedSnapAttributionViewHide(self)
@@ -1084,7 +1132,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Refreshes Camera Kit's cached input dimensions after the host changes AVCaptureDevice.activeFormat.
     open func refreshActiveInputAttributes() {
         // Camera Kit declares activeInput as nonnull, but it is not initialized until start() completes.
-        guard captureSession.isRunning else { return }
+        guard cameraKitStarted else { return }
         cameraKit.activeInput.setVideoOrientation(configuredOrientation)
         refreshHighDefinitionLensRendering()
     }
@@ -1383,6 +1431,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// Selects the rear camera input. Ultra-wide falls back to automatic when unavailable.
     public func setBackCameraDeviceMode(_ mode: BackCameraDeviceMode) {
+        guard supportsCameraDeviceControls else { return }
         guard backCameraDeviceMode != mode else { return }
         backCameraDeviceMode = mode
         guard cameraPosition == .back else {
@@ -2000,6 +2049,7 @@ private extension CameraController {
 
     func replaceVideoInputIfNeeded(for position: AVCaptureDevice.Position) {
         guard
+            supportsCameraDeviceControls,
             let desiredDevice = preferredVideoDevice(for: position),
             cameraInputDevice?.uniqueID != desiredDevice.uniqueID,
             let replacementInput = try? AVCaptureDeviceInput(device: desiredDevice)
@@ -2260,6 +2310,7 @@ extension CameraController {
 extension CameraController {
     /// Set camera position based on lens facing preference.
     private func changeCameraPosition(with lensFacing: LensFacingPreference) {
+        guard supportsCameraDeviceControls else { return }
         var position: AVCaptureDevice.Position?
         switch lensFacing {
         case .front: position = .front
