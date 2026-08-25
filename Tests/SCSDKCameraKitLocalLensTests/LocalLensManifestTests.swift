@@ -316,6 +316,31 @@ final class LocalLensManifestTests: XCTestCase {
         XCTAssertEqual(bundle.lensCount, 1)
     }
 
+    func testIncludesOnlySelectedLensAndItsDependencies() throws {
+        let manifestURL = try makeValidFixture { manifest in
+            var assets = manifest["assets"] as! [[String: Any]]
+            var unavailableAsset = assets[0]
+            unavailableAsset["id"] = "asset-unavailable"
+            unavailableAsset["file"] = "dependencies/unavailable.lzc"
+            assets.append(unavailableAsset)
+            manifest["assets"] = assets
+
+            var lenses = manifest["lenses"] as! [[String: Any]]
+            lenses[1]["file"] = "lenses/unavailable.lzc"
+            lenses[1]["assetIDs"] = ["asset-unavailable"]
+            manifest["lenses"] = lenses
+        }
+
+        let bundle = try LocalLensBundle(
+            manifestURL: manifestURL,
+            resourceRootURL: resourceRoot,
+            includingLensIDs: ["lens-one"]
+        )
+
+        XCTAssertEqual(bundle.validatedLenses.map(\.manifest.id), ["lens-one"])
+        XCTAssertEqual(bundle.validatedAssetsByID.keys.sorted(), ["asset-shared"])
+    }
+
     func testPrioritizesLocalizedLensesWithoutChangingPartitionOrder() throws {
         let manifestURL = try makeValidFixture { manifest in
             var lenses = manifest["lenses"] as! [[String: Any]]

@@ -17,6 +17,7 @@ public final class LocalLensBundle {
     public init(
         manifestURL: URL,
         resourceRootURL: URL,
+        includingLensIDs: Set<String>? = nil,
         excludingLensIDs: Set<String> = [],
         prioritizingLensIDs: Set<String> = []
     ) throws {
@@ -32,7 +33,6 @@ public final class LocalLensBundle {
 
         let root = resourceRootURL.standardizedFileURL.resolvingSymlinksInPath()
         var assetsByID: [String: LocalLensManifest.Asset] = [:]
-        var validatedAssets: [String: ValidatedAsset] = [:]
 
         for asset in manifest.assets {
             if let existing = assetsByID[asset.id] {
@@ -40,6 +40,31 @@ public final class LocalLensBundle {
                     throw LocalLensBundleError.conflictingAssetID(asset.id)
                 }
                 continue
+            }
+            assetsByID[asset.id] = asset
+        }
+
+        var seenLensIDs = Set<String>()
+        for lens in manifest.lenses {
+            guard seenLensIDs.insert(lens.id).inserted else {
+                throw LocalLensBundleError.duplicateLensID(lens.id)
+            }
+        }
+
+        let includedLenses = manifest.lenses.filter { lens in
+            (includingLensIDs == nil || includingLensIDs?.contains(lens.id) == true)
+                && !excludingLensIDs.contains(lens.id)
+        }
+        let orderedLenses = includedLenses.filter { prioritizingLensIDs.contains($0.id) }
+            + includedLenses.filter { !prioritizingLensIDs.contains($0.id) }
+
+        let requiredAssetIDs = includingLensIDs == nil
+            ? Set(assetsByID.keys)
+            : Set(orderedLenses.flatMap(\.assetIDs))
+        var validatedAssets: [String: ValidatedAsset] = [:]
+        for assetID in requiredAssetIDs {
+            guard let asset = assetsByID[assetID] else {
+                throw LocalLensBundleError.missingAsset(assetID)
             }
             guard [3, 7].contains(asset.assetType), [3, 4, 6].contains(asset.assetTiming) else {
                 throw LocalLensBundleError.invalidAssetMetadata(
@@ -56,20 +81,8 @@ public final class LocalLensBundle {
                 expectedSHA256: asset.sha256,
                 allowingZIP: true
             )
-            assetsByID[asset.id] = asset
             validatedAssets[asset.id] = ValidatedAsset(manifest: asset, fileURL: fileURL)
         }
-
-        var seenLensIDs = Set<String>()
-        for lens in manifest.lenses {
-            guard seenLensIDs.insert(lens.id).inserted else {
-                throw LocalLensBundleError.duplicateLensID(lens.id)
-            }
-        }
-
-        let includedLenses = manifest.lenses.filter { !excludingLensIDs.contains($0.id) }
-        let orderedLenses = includedLenses.filter { prioritizingLensIDs.contains($0.id) }
-            + includedLenses.filter { !prioritizingLensIDs.contains($0.id) }
 
         var lenses: [ValidatedLens] = []
         for lens in orderedLenses {

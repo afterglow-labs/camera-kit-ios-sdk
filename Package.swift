@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "CameraKit",
     defaultLocalization: "en",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS("16.5")],
     products: [
         .library(name: "SCSDKCameraKit", targets: ["SCSDKCameraKit"]),
         .library(name: "SCSDKCameraKitLoginKitAuth", targets: ["SCSDKCameraKitLoginKitAuth_Wrapper"]),

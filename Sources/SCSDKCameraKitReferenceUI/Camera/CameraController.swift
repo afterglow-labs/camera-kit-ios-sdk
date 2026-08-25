@@ -388,7 +388,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ) {
         self.cameraKit = cameraKit
         self.captureSession = captureSession
-        configuredExternalInput = externalInput
+        configuredExternalInput = externalInput.map(ExternalInputCompatibilityAdapter.init(source:))
         self.cameraPosition = cameraPosition
         super.init()
         cameraKit.cameraPosition = cameraPosition

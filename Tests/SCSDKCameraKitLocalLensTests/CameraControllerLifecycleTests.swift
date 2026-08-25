@@ -24,6 +24,7 @@ final class CameraControllerLifecycleTests: XCTestCase {
         XCTAssertTrue(controller.usesExternalInput)
         XCTAssertFalse(controller.supportsCameraDeviceControls)
         XCTAssertEqual(controller.cameraPosition, .back)
+        XCTAssertTrue(input.destination is ExternalInputCompatibilityAdapter)
 
         controller.flipCamera()
 
