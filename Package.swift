@@ -78,7 +78,11 @@ let package = Package(
         ),
         .testTarget(
             name: "SCSDKCameraKitLocalLensTests",
-            dependencies: ["SCSDKCameraKitLocalLens", "SCSDKCameraKitReferenceUI"],
+            dependencies: [
+                "SCSDKCameraKitLocalLens",
+                "SCSDKCameraKitReferenceUI",
+                "SCSDKCameraKitReferenceSwiftUI",
+            ],
             path: "Tests/SCSDKCameraKitLocalLensTests"
         ),
         .testTarget(
