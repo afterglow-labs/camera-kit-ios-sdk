@@ -1,4 +1,3 @@
-import SCSDKCameraKit
 import SwiftUI
 import UIKit
 import XCTest
@@ -8,26 +7,16 @@ import XCTest
 @MainActor
 final class CameraChromeVisibilityTests: XCTestCase {
     func testHiddenChromeKeepsEnabledRingLightVisible() {
-        let controller = CameraController(
-            sessionConfig: SessionConfig(apiToken: "camera-chrome-visibility-test")
-        )
-        let cameraView = SCSDKCameraKitReferenceSwiftUI.CameraView(
-            cameraController: controller,
-            chromeHidden: .constant(true),
-            showsCaptureChrome: false,
-            showsLensCarousel: false,
-            showsCameraKitControls: false,
-            showsChromeVisibilityButton: false
-        )
-        let host = UIHostingController(rootView: cameraView)
+        let state = CameraViewState()
+        state.chromeHidden = true
+        state.showingRingLight = true
+
+        let host = UIHostingController(rootView: CameraRingLightEffectLayer(state: state))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
         window.rootViewController = host
         window.makeKeyAndVisible()
         host.view.frame = window.bounds
         host.view.layoutIfNeeded()
-        drainMainRunLoop()
-
-        controller.setRingLightEnabled(true)
         drainMainRunLoop()
 
         guard let ringLight = firstSubview(of: RingLightView.self, in: host.view) else {

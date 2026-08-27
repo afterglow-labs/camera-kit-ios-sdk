@@ -228,12 +228,7 @@ private struct PreviewLayer: View {
                                 cameraController.finalizeZoom()
                             })
                     .allowsHitTesting(presentation.attachesLensOutput)
-                RingLightRepresentable(state: state)
-                    .allowsHitTesting(false)
-                    .opacity(state.showingRingLight ? 1 : 0)
-                RingLightStroke(color: Color(state.ringLightColor))
-                    .allowsHitTesting(false)
-                    .opacity(state.showingRingLight ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+                CameraRingLightEffectLayer(state: state)
                 AspectRatioMatte(availableSize: proxy.size, aspectRatio: aspectRatio.widthToHeight)
                     .allowsHitTesting(false)
             }
@@ -257,6 +252,22 @@ private struct PreviewLayer: View {
             return CGSize(width: availableSize.height * aspectRatio, height: availableSize.height)
         }
         return CGSize(width: availableSize.width, height: availableSize.width / aspectRatio)
+    }
+}
+
+@available(iOS 14.0, *)
+struct CameraRingLightEffectLayer: View {
+    @ObservedObject var state: CameraViewState
+
+    var body: some View {
+        ZStack {
+            RingLightRepresentable(state: state)
+                .allowsHitTesting(false)
+                .opacity(state.showingRingLight ? 1 : 0)
+            RingLightStroke(color: Color(state.ringLightColor))
+                .allowsHitTesting(false)
+                .opacity(state.showingRingLight ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+        }
     }
 }
 
