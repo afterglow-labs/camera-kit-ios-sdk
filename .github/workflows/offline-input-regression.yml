@@ -24,3 +24,9 @@ jobs:
             -scheme CameraKit-Package \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -only-testing:SCSDKCameraKitLocalLensTests/OfflineInputTransitionCoordinatorTests
+      - name: Run camera chrome visibility regression
+        run: |
+          xcodebuild test \
+            -scheme CameraKit-Package \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -only-testing:SCSDKCameraKitLocalLensTests/CameraChromeVisibilityTests
