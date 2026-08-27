@@ -729,12 +729,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private func switchToOfflineInput(_ input: Input, completion: (() -> Void)?) {
         let shouldReapplyLenses = !readLensState { desiredLensStack.applied.isEmpty }
 
-        captureSessionQueue.async { [weak self] in
-            guard let self else { return }
+        let transition = OfflineInputTransitionCoordinator(queue: captureSessionQueue)
+        transition.perform(
+            stop: { [weak self] didStop in
+                guard let self else { return }
 
-            self.cameraKit.activeInput.stopRunning()
-            self.captureSession.stopRunning()
-            self.cameraKit.stop { [weak self] in
+                self.cameraKit.activeInput.stopRunning()
+                self.captureSession.stopRunning()
+                self.cameraKit.stop {
+                    didStop()
+                }
+            },
+            restart: { [weak self] in
                 guard let self else { return }
 
                 let dataProvider = self.configureDataProvider()
@@ -759,7 +765,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     completion?()
                 }
             }
-        }
+        )
     }
 
     // MARK: LensRepositoryGroupObserver
