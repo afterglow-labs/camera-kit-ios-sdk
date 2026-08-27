@@ -230,10 +230,10 @@ private struct PreviewLayer: View {
                     .allowsHitTesting(presentation.attachesLensOutput)
                 RingLightRepresentable(state: state)
                     .allowsHitTesting(false)
-                    .opacity(state.showingRingLight && !state.chromeHidden ? 1 : 0)
+                    .opacity(state.showingRingLight ? 1 : 0)
                 RingLightStroke(color: Color(state.ringLightColor))
                     .allowsHitTesting(false)
-                    .opacity(state.showingRingLight && !state.chromeHidden ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
+                    .opacity(state.showingRingLight ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
                 AspectRatioMatte(availableSize: proxy.size, aspectRatio: aspectRatio.widthToHeight)
                     .allowsHitTesting(false)
             }
