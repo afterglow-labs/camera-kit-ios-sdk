@@ -4,6 +4,17 @@
 import UIKit
 
 public class CameraActionsView: UIView {
+    /// Horizontal clearance for the Lens Controls strip at the supplied safe-area width.
+    public static func adaptiveTrailingInset(forAvailableWidth width: CGFloat) -> CGFloat {
+        if width < 360 {
+            return 12
+        }
+        if width < 430 {
+            return 16
+        }
+        return 20
+    }
+
     // MARK: Views
 
     /// Button to flip camera input position
@@ -144,12 +155,12 @@ public class CameraActionsView: UIView {
         return view
     }()
 
-    /// Button to enable or disable the host-provided persistent Rhinoplasty Lens layer.
+    /// Button to enable or disable the host-provided persistent Nose Adjustments Lens layer.
     public lazy var rhinoplastyActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
         view.configurable = false
         view.toggleButton.accessibilityIdentifier = CameraElements.rhinoplastyToggleButton.id
-        view.toggleButton.accessibilityLabel = "Rhinoplasty"
+        view.toggleButton.accessibilityLabel = "Nose Adjustments"
         view.toggleButton.tintColor = .white
         if let image = UIImage(
             systemName: "face.smiling",

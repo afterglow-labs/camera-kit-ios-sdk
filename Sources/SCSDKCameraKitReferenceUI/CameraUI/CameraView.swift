@@ -78,6 +78,8 @@ open class CameraView: UIView {
         return stackView
     }()
 
+    private var cameraActionsTrailingConstraint: NSLayoutConstraint?
+
     /// Control view for switching between flash and ring light as well as controlling ring light color and intensity.
     public lazy var flashControlView: FlashControlView = {
         let view = FlashControlView()
@@ -249,6 +251,7 @@ open class CameraView: UIView {
     }
 
     override open func layoutSubviews() {
+        updateCameraActionsLayout()
         super.layoutSubviews()
         let previewFrame = resolvedPreviewFrame
         rawCameraPreviewView.frame = previewFrame
@@ -256,6 +259,16 @@ open class CameraView: UIView {
         previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
+        )
+    }
+
+    private func updateCameraActionsLayout() {
+        let safeAreaWidth = max(
+            safeAreaLayoutGuide.layoutFrame.width,
+            bounds.width - safeAreaInsets.left - safeAreaInsets.right
+        )
+        cameraActionsTrailingConstraint?.constant = -CameraActionsView.adaptiveTrailingInset(
+            forAvailableWidth: safeAreaWidth
         )
     }
 }
@@ -357,9 +370,14 @@ extension CameraView {
 extension CameraView {
     private func setupCameraActionsView() {
         addSubview(cameraActionsView)
+        let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
+        )
+        cameraActionsTrailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
             cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6.0),
-            cameraActionsView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8.0),
+            trailingConstraint,
             cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
         ])
     }

@@ -549,6 +549,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 @available(iOS 14.0, *)
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
+    private var cameraActionsTrailingConstraint: NSLayoutConstraint?
     let lensLabel: UILabel = {
         let label = UILabel()
         label.accessibilityIdentifier = CameraElements.lensLabel.id
@@ -592,6 +593,17 @@ private final class InclusiveCameraControlsView: UIView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setup()
+    }
+
+    override func layoutSubviews() {
+        let safeAreaWidth = max(
+            safeAreaLayoutGuide.layoutFrame.width,
+            bounds.width - safeAreaInsets.left - safeAreaInsets.right
+        )
+        cameraActionsTrailingConstraint?.constant = -CameraActionsView.adaptiveTrailingInset(
+            forAvailableWidth: safeAreaWidth
+        )
+        super.layoutSubviews()
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -764,9 +776,15 @@ private final class InclusiveCameraControlsView: UIView {
 
         hideAllControls()
 
+        let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
+        )
+        cameraActionsTrailingConstraint = trailingConstraint
+
         NSLayoutConstraint.activate([
             cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6),
-            cameraActionsView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            trailingConstraint,
             cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
 
             lensLabel.centerYAnchor.constraint(equalTo: cameraActionsView.flipCameraButton.centerYAnchor),

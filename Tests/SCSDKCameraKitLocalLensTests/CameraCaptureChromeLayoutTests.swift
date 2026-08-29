@@ -3,6 +3,32 @@ import XCTest
 @testable import SCSDKCameraKitReferenceUI
 
 final class CameraCaptureChromeLayoutTests: XCTestCase {
+    func testLensControlsUseAdaptiveSafeAreaClearance() {
+        for width in [320.0, 393.0, 600.0] {
+            let cameraView = laidOutCameraView(width: width)
+            let safeFrame = cameraView.safeAreaLayoutGuide.layoutFrame
+            let expectedInset = CameraActionsView.adaptiveTrailingInset(
+                forAvailableWidth: safeFrame.width
+            )
+
+            XCTAssertEqual(
+                safeFrame.maxX - cameraView.cameraActionsView.frame.maxX,
+                expectedInset,
+                accuracy: 0.5,
+                "Unexpected Lens Controls inset at width \(width)"
+            )
+        }
+    }
+
+    func testNoseAdjustmentsControlUsesTheLensName() {
+        let cameraView = laidOutCameraView()
+
+        XCTAssertEqual(
+            cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.accessibilityLabel,
+            "Nose Adjustments"
+        )
+    }
+
     func testPhotoAndRecordButtonsAreAtLeastFiftyPercentLarger() {
         let cameraView = laidOutCameraView()
 
@@ -50,9 +76,11 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         )
     }
 
-    private func laidOutCameraView() -> SCSDKCameraKitReferenceUI.CameraView {
+    private func laidOutCameraView(
+        width: CGFloat = 393
+    ) -> SCSDKCameraKitReferenceUI.CameraView {
         let cameraView = SCSDKCameraKitReferenceUI.CameraView(
-            frame: CGRect(x: 0, y: 0, width: 393, height: 852)
+            frame: CGRect(x: 0, y: 0, width: width, height: 852)
         )
         cameraView.setNeedsLayout()
         cameraView.layoutIfNeeded()
