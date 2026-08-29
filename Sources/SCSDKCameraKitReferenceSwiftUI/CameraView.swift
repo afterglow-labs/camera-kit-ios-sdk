@@ -87,77 +87,92 @@ public struct CameraView: View {
         let lensCarouselVisible = showsLensCarousel && !state.chromeHidden
         let cameraKitControlsVisible = showsCameraKitControls && !state.chromeHidden
 
-        ZStack {
-            PreviewLayer(
-                state: state,
-                cameraController: cameraController,
-                aspectRatio: previewAspectRatio,
-                mirrored: previewMirrored,
-                rawRecordingPreviewMirrored: rawRecordingPreviewMirrored,
-                recordingPreviewMode: recordingPreviewMode
+        GeometryReader { proxy in
+            let viewportSize = proxy.size
+            let trailingClearance = CameraCaptureChromeLayout.trailingClearance(
+                for: viewportSize.width
             )
-            .edgesIgnoringSafeArea(.all)
-            if captureChromeVisible {
-                VStack {
-                    MessageView(
-                        lensName: state.activeLensDisplayName,
-                        lensID: state.activeLensDisplayID,
-                        showing: state.showingMessage
-                    )
-                    .padding(.top, CameraCaptureChromeLayout.lensStatusTopClearance)
-                    Spacer()
-                    MediaPickerView(provider: cameraController.lensMediaProvider)
-                    LensFooter(
+
+            ZStack {
+                PreviewLayer(
+                    state: state,
+                    cameraController: cameraController,
+                    aspectRatio: previewAspectRatio,
+                    mirrored: previewMirrored,
+                    rawRecordingPreviewMirrored: rawRecordingPreviewMirrored,
+                    recordingPreviewMode: recordingPreviewMode
+                )
+                .edgesIgnoringSafeArea(.all)
+                if captureChromeVisible {
+                    VStack {
+                        MessageView(
+                            lensName: state.activeLensDisplayName,
+                            lensID: state.activeLensDisplayID,
+                            showing: state.showingMessage
+                        )
+                        .padding(.top, CameraCaptureChromeLayout.lensStatusTopClearance)
+                        Spacer()
+                        MediaPickerView(provider: cameraController.lensMediaProvider)
+                        LensFooter(
+                            state: state,
+                            cameraController: cameraController,
+                            onVideoRecorded: onVideoRecorded
+                        )
+                    }
+                    .transition(.opacity)
+                }
+                if state.showingSnapAttribution && captureChromeVisible {
+                    SnapAttributionContainerRepresentable()
+                        .edgesIgnoringSafeArea(.all)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+                if cameraKitControlsVisible {
+                    CameraInclusiveControlsRepresentable(
                         state: state,
                         cameraController: cameraController,
-                        onVideoRecorded: onVideoRecorded
+                        trailingClearance: trailingClearance
                     )
+                    .frame(width: viewportSize.width, height: viewportSize.height)
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
-            }
-            if lensCarouselVisible {
-                HStack {
-                    Spacer(minLength: 0)
+                if lensCarouselVisible {
+                    HStack {
+                        Spacer(minLength: 0)
 
-                    CarouselView(
-                        availableLenses: $state.lenses,
-                        selectedLens: $state.selectedLens,
-                        orientation: .vertical,
-                        maximumVisibleItemCount: lensCarouselMaximumVisibleItemCount,
-                        cameraController: cameraController,
-                        lensContextMenuProvider: lensContextMenuProvider
-                    )
-                    .frame(width: 62)
-                    .frame(maxHeight: .infinity)
-                    .padding(.top, LensUILayout.carouselTopInset)
-                    .padding(.bottom, 132)
-                    .padding(.trailing, 10)
+                        CarouselView(
+                            availableLenses: $state.lenses,
+                            selectedLens: $state.selectedLens,
+                            orientation: .vertical,
+                            maximumVisibleItemCount: lensCarouselMaximumVisibleItemCount,
+                            cameraController: cameraController,
+                            lensContextMenuProvider: lensContextMenuProvider
+                        )
+                        .frame(width: 62)
+                        .frame(maxHeight: .infinity)
+                        .padding(.top, LensUILayout.carouselTopInset)
+                        .padding(.bottom, LensUILayout.carouselBottomInset)
+                        .padding(.trailing, trailingClearance)
+                    }
+                    .frame(width: viewportSize.width, height: viewportSize.height)
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
+                if captureChromeVisible {
+                    HintView(hint: state.hint)
+                        .transition(.opacity)
+                }
+                if state.loading && captureChromeVisible {
+                    ProgressView()
+                        .transition(.opacity)
+                }
+                if showsChromeVisibilityButton {
+                    ChromeVisibilityButton(hidden: $state.chromeHidden)
+                }
             }
-            if state.showingSnapAttribution && captureChromeVisible {
-                SnapAttributionContainerRepresentable()
-                    .edgesIgnoringSafeArea(.all)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-            if cameraKitControlsVisible {
-                CameraInclusiveControlsRepresentable(state: state, cameraController: cameraController)
-                    .edgesIgnoringSafeArea(.all)
-                    .transition(.opacity)
-            }
-            if captureChromeVisible {
-                HintView(hint: state.hint)
-                    .transition(.opacity)
-            }
-            if state.loading && captureChromeVisible {
-                ProgressView()
-                    .transition(.opacity)
-            }
-            if showsChromeVisibilityButton {
-                ChromeVisibilityButton(hidden: $state.chromeHidden)
-            }
-        }.onAppear {
+            .frame(width: viewportSize.width, height: viewportSize.height)
+            .clipped()
+        }
+        .onAppear {
             state.chromeHidden = chromeHidden
             state.configureIfNeeded(
                 cameraController: cameraController,
@@ -273,7 +288,8 @@ struct CameraRingLightEffectLayer: View {
 
 private enum LensUILayout {
     static let bottomSafeAreaInset: CGFloat = 180
-    static let carouselTopInset: CGFloat = 364
+    static let carouselTopInset: CGFloat = 372
+    static let carouselBottomInset: CGFloat = 116
 }
 
 @available(iOS 14.0, *)
@@ -470,6 +486,7 @@ private final class SnapAttributionContainerView: UIView {
 private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     @ObservedObject var state: CameraViewState
     let cameraController: CameraController
+    let trailingClearance: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator(state: state, cameraController: cameraController)
@@ -479,6 +496,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         let view = InclusiveCameraControlsView()
         context.coordinator.controlsView = view
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
+        view.setTrailingClearance(trailingClearance)
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -491,6 +509,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
+        uiView.setTrailingClearance(trailingClearance)
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -595,15 +614,8 @@ private final class InclusiveCameraControlsView: UIView {
         setup()
     }
 
-    override func layoutSubviews() {
-        let safeAreaWidth = max(
-            safeAreaLayoutGuide.layoutFrame.width,
-            bounds.width - safeAreaInsets.left - safeAreaInsets.right
-        )
-        cameraActionsTrailingConstraint?.constant = -CameraActionsView.adaptiveTrailingInset(
-            forAvailableWidth: safeAreaWidth
-        )
-        super.layoutSubviews()
+    func setTrailingClearance(_ clearance: CGFloat) {
+        cameraActionsTrailingConstraint?.constant = -clearance
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -777,7 +789,7 @@ private final class InclusiveCameraControlsView: UIView {
         hideAllControls()
 
         let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            equalTo: trailingAnchor,
             constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
         )
         cameraActionsTrailingConstraint = trailingConstraint

@@ -11,4 +11,15 @@ public enum CameraCaptureChromeLayout {
     public static let captureControlsCenterOffset = -(photoButtonDiameter + captureControlSpacing) / 2
     public static let captureControlsHeight: CGFloat = 64
     public static let attributionFontSize: CGFloat = 11
+
+    /// Keeps right-edge camera chrome clear of compact device edges and display clipping.
+    public static func trailingClearance(for viewportWidth: CGFloat) -> CGFloat {
+        if viewportWidth < 390 {
+            return 28
+        }
+        if viewportWidth < 430 {
+            return 24
+        }
+        return 20
+    }
 }

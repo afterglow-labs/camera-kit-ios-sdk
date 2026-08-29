@@ -20,6 +20,13 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         }
     }
 
+    func testCompactCameraChromeMovesFurtherInsideTheViewport() {
+        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 320), 28)
+        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 375), 28)
+        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 393), 24)
+        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 430), 20)
+    }
+
     func testNoseAdjustmentsControlUsesTheLensName() {
         let cameraView = laidOutCameraView()
 

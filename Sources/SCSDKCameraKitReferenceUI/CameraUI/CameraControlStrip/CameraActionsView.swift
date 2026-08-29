@@ -6,13 +6,7 @@ import UIKit
 public class CameraActionsView: UIView {
     /// Horizontal clearance for the Lens Controls strip at the supplied safe-area width.
     public static func adaptiveTrailingInset(forAvailableWidth width: CGFloat) -> CGFloat {
-        if width < 360 {
-            return 12
-        }
-        if width < 430 {
-            return 16
-        }
-        return 20
+        CameraCaptureChromeLayout.trailingClearance(for: width)
     }
 
     // MARK: Views

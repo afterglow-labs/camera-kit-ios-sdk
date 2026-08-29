@@ -366,7 +366,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         // 3D body tracking (https://lensstudio.snapchat.com/templates/object/3d-body-tracking) have
         // enough cache space to fit alongside other lenses.
         let lensesConfig = LensesConfig(cacheConfig: CacheConfig(lensContentMaxSize: 150 * 1024 * 1024))
-        let cameraKit = Session(sessionConfig: sessionConfig, lensesConfig: lensesConfig, errorHandler: nil)
+        let cameraKit = Session(
+            sessionConfig: sessionConfig,
+            lensesConfig: lensesConfig,
+            errorHandler: CameraKitLoggingErrorHandler.shared
+        )
         let captureSession = AVCaptureSession()
         self.init(
             cameraKit: cameraKit,
