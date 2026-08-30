@@ -5,19 +5,19 @@ final class LensLayerDisplayTests: XCTestCase {
     func testLayerDisplayNamesDescribeTheAppliedStack() {
         XCTAssertEqual(
             LensLayerDisplay.name(
-                persistentBases: ["Retouch", "Rhinoplasty"],
+                persistentBases: ["Retouch", "NoseAdjustments"],
                 base: "Face Sculpt",
                 top: "Comic"
             ),
-            "Retouch + Rhinoplasty + Face Sculpt + Comic"
+            "Retouch + NoseAdjustments + Face Sculpt + Comic"
         )
         XCTAssertEqual(
-            LensLayerDisplay.name(persistentBases: ["Retouch", "Rhinoplasty"], base: nil, top: "Comic"),
-            "Retouch + Rhinoplasty + Comic"
+            LensLayerDisplay.name(persistentBases: ["Retouch", "NoseAdjustments"], base: nil, top: "Comic"),
+            "Retouch + NoseAdjustments + Comic"
         )
         XCTAssertEqual(
-            LensLayerDisplay.name(persistentBases: ["Retouch", "Rhinoplasty"], base: nil, top: nil),
-            "Retouch + Rhinoplasty"
+            LensLayerDisplay.name(persistentBases: ["Retouch", "NoseAdjustments"], base: nil, top: nil),
+            "Retouch + NoseAdjustments"
         )
         XCTAssertEqual(LensLayerDisplay.name(base: "Retouch", top: nil), "Retouch (Pinned)")
         XCTAssertEqual(LensLayerDisplay.name(base: "Retouch", top: "Comic"), "Retouch + Comic")

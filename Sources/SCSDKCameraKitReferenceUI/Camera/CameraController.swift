@@ -207,21 +207,21 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
-    /// The confirmed persistent Rhinoplasty Lens, if one is active.
-    public var activeRhinoplastyLens: Lens? {
+    /// The confirmed persistent Nose Adjustments Lens, if one is active.
+    public var activeNoseAdjustmentsLens: Lens? {
         readLensState {
-            activePersistentLens(matching: configuredRhinoplastyLens)
+            activePersistentLens(matching: configuredNoseAdjustmentsLens)
         }
     }
 
-    /// Whether a dedicated Rhinoplasty Lens has been supplied by the host app.
-    public var isRhinoplastyAvailable: Bool {
-        readLensState { configuredRhinoplastyLens != nil }
+    /// Whether a dedicated Nose Adjustments Lens has been supplied by the host app.
+    public var isNoseAdjustmentsAvailable: Bool {
+        readLensState { configuredNoseAdjustmentsLens != nil }
     }
 
-    /// Whether the dedicated Rhinoplasty layer is requested for this camera session.
-    public var isRhinoplastyEnabled: Bool {
-        readLensState { rhinoplastyRequestedEnabled }
+    /// Whether the dedicated Nose Adjustments layer is requested for this camera session.
+    public var isNoseAdjustmentsEnabled: Bool {
+        readLensState { noseAdjustmentsRequestedEnabled }
     }
 
     /// Values passed to the dedicated Nose Adjustments Lens the next time it is applied.
@@ -253,7 +253,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Lenses exposed to the reference carousel. Dedicated permanent-control Lenses are excluded.
     public var carouselLenses: [Lens] {
         let hiddenControlIdentities = readLensState {
-            (configuredRetouchOptions.values + [configuredRhinoplastyLens].compactMap { $0 })
+            (configuredRetouchOptions.values + [configuredNoseAdjustmentsLens].compactMap { $0 })
                 .map { identity(for: $0) }
         }
         return groupIDs
@@ -491,8 +491,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     self.configuredRetouchOptions = RetouchLensOptions(standard: nil, machineLearning: nil)
                     self.selectedRetouchVariant = .standard
                     self.retouchRequestedEnabled = false
-                    self.configuredRhinoplastyLens = nil
-                    self.rhinoplastyRequestedEnabled = false
+                    self.configuredNoseAdjustmentsLens = nil
+                    self.noseAdjustmentsRequestedEnabled = false
                     DispatchQueue.main.async {
                         self.uiDelegate?.cameraControllerLensStackDidChange(self)
                         self.uiDelegate = nil
@@ -1103,15 +1103,15 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         setPermanentLensEnabled(enabled, control: .retouch, completion: completion)
     }
 
-    /// Supplies the dedicated Rhinoplasty Lens used by the top-right Rhinoplasty control.
+    /// Supplies the dedicated Nose Adjustments Lens used by the top-right Nose Adjustments control.
     /// The Lens is excluded from the carousel and occupies the second composite-Lens layer.
-    public func configureRhinoplastyLens(_ lens: Lens?, completion: ((Bool) -> Void)? = nil) {
-        configurePermanentLens(lens, control: .rhinoplasty, completion: completion)
+    public func configureNoseAdjustmentsLens(_ lens: Lens?, completion: ((Bool) -> Void)? = nil) {
+        configurePermanentLens(lens, control: .noseAdjustments, completion: completion)
     }
 
-    /// Enables or disables the dedicated Rhinoplasty layer without changing other Lens layers.
-    public func setRhinoplastyEnabled(_ enabled: Bool, completion: ((Bool) -> Void)? = nil) {
-        setPermanentLensEnabled(enabled, control: .rhinoplasty, completion: completion)
+    /// Enables or disables the dedicated Nose Adjustments layer without changing other Lens layers.
+    public func setNoseAdjustmentsEnabled(_ enabled: Bool, completion: ((Bool) -> Void)? = nil) {
+        setPermanentLensEnabled(enabled, control: .noseAdjustments, completion: completion)
     }
 
     /// Updates the controls authored by the Nose Adjustments Lens.
@@ -1131,7 +1131,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             self.configuredNoseAdjustmentValues = values
             self.notifyControlsDidChange()
 
-            guard reapply, self.rhinoplastyRequestedEnabled else {
+            guard reapply, self.noseAdjustmentsRequestedEnabled else {
                 completion?(true)
                 return
             }
@@ -1252,7 +1252,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
             self.desiredLensStack.reset()
             self.retouchRequestedEnabled = false
-            self.rhinoplastyRequestedEnabled = false
+            self.noseAdjustmentsRequestedEnabled = false
             self.notifyControlsDidChange()
             self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
         }
@@ -1556,13 +1556,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var configuredRetouchOptions = RetouchLensOptions<Lens>(standard: nil, machineLearning: nil)
     private var selectedRetouchVariant: RetouchLensVariant = .standard
     private var retouchRequestedEnabled = false
-    private var configuredRhinoplastyLens: Lens?
-    private var rhinoplastyRequestedEnabled = false
+    private var configuredNoseAdjustmentsLens: Lens?
+    private var noseAdjustmentsRequestedEnabled = false
     private var configuredNoseAdjustmentValues = NoseAdjustmentValues.original
 
     private enum PermanentLensControl {
         case retouch
-        case rhinoplasty
+        case noseAdjustments
     }
 
     private enum PendingLensOperation {
@@ -1690,35 +1690,35 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private func configuredLens(for control: PermanentLensControl) -> Lens? {
         switch control {
         case .retouch: return configuredRetouchLens
-        case .rhinoplasty: return configuredRhinoplastyLens
+        case .noseAdjustments: return configuredNoseAdjustmentsLens
         }
     }
 
     private func setConfiguredLens(_ lens: Lens?, for control: PermanentLensControl) {
         switch control {
         case .retouch: configuredRetouchLens = lens
-        case .rhinoplasty: configuredRhinoplastyLens = lens
+        case .noseAdjustments: configuredNoseAdjustmentsLens = lens
         }
     }
 
     private func isPermanentLensRequested(_ control: PermanentLensControl) -> Bool {
         switch control {
         case .retouch: return retouchRequestedEnabled
-        case .rhinoplasty: return rhinoplastyRequestedEnabled
+        case .noseAdjustments: return noseAdjustmentsRequestedEnabled
         }
     }
 
     private func setPermanentLensRequested(_ enabled: Bool, for control: PermanentLensControl) {
         switch control {
         case .retouch: retouchRequestedEnabled = enabled
-        case .rhinoplasty: rhinoplastyRequestedEnabled = enabled
+        case .noseAdjustments: noseAdjustmentsRequestedEnabled = enabled
         }
     }
 
     private func updateDesiredPersistentBases() {
         let layers = [
             retouchRequestedEnabled ? configuredRetouchLens : nil,
-            rhinoplastyRequestedEnabled ? configuredRhinoplastyLens : nil,
+            noseAdjustmentsRequestedEnabled ? configuredNoseAdjustmentsLens : nil,
         ].compactMap { $0 }
         desiredLensStack.setPersistentBases(layers)
     }
@@ -2300,7 +2300,7 @@ extension CameraController {
     }
 
     private func noseAdjustmentLaunchData(for lens: Lens) -> [String: String] {
-        guard configuredRhinoplastyLens.map({ lensesMatch($0, lens) }) == true else { return [:] }
+        guard configuredNoseAdjustmentsLens.map({ lensesMatch($0, lens) }) == true else { return [:] }
         return [
             "afterglow_nose_native_controls": "true",
             "afterglow_nose_width": String(configuredNoseAdjustmentValues.width),

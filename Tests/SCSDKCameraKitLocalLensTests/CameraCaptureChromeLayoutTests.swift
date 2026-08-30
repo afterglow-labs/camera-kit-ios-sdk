@@ -48,12 +48,12 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         let cameraView = laidOutCameraView()
 
         XCTAssertEqual(
-            cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.accessibilityLabel,
+            cameraView.cameraActionsView.noseAdjustmentsActionView.toggleButton.accessibilityLabel,
             "Nose Adjustments"
         )
-        XCTAssertTrue(cameraView.cameraActionsView.rhinoplastyActionView.configurable)
+        XCTAssertTrue(cameraView.cameraActionsView.noseAdjustmentsActionView.configurable)
         XCTAssertEqual(
-            cameraView.cameraActionsView.rhinoplastyActionView.configurationButton.accessibilityLabel,
+            cameraView.cameraActionsView.noseAdjustmentsActionView.configurationButton.accessibilityLabel,
             "Nose Adjustment Settings"
         )
     }
@@ -96,7 +96,7 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         let cameraView = laidOutCameraView(width: 320)
         let panel = cameraView.noseAdjustmentsControlView
         let safeFrame = cameraView.safeAreaLayoutGuide.layoutFrame
-        let action = cameraView.cameraActionsView.rhinoplastyActionView
+        let action = cameraView.cameraActionsView.noseAdjustmentsActionView
         let actionFrame = action.convert(action.bounds, to: cameraView)
 
         XCTAssertGreaterThanOrEqual(panel.frame.minX, safeFrame.minX + 8 - 0.5)

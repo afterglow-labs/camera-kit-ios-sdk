@@ -150,10 +150,10 @@ public class CameraActionsView: UIView {
     }()
 
     /// Button to enable or disable the host-provided persistent Nose Adjustments Lens layer.
-    public lazy var rhinoplastyActionView: CameraConfigurableActionView = {
+    public lazy var noseAdjustmentsActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
         view.configurable = true
-        view.toggleButton.accessibilityIdentifier = CameraElements.rhinoplastyToggleButton.id
+        view.toggleButton.accessibilityIdentifier = CameraElements.noseAdjustmentsToggleButton.id
         view.toggleButton.accessibilityLabel = "Nose Adjustments"
         view.toggleButton.tintColor = .white
         if let image = UIImage(
@@ -163,7 +163,7 @@ public class CameraActionsView: UIView {
             view.toggleButton.setImage(image, for: .normal)
             view.toggleButton.setImage(image.circleHighlightedImage(radius: 20, color: .white), for: .selected)
         }
-        view.configurationButton.accessibilityIdentifier = CameraElements.rhinoplastyConfigurationButton.id
+        view.configurationButton.accessibilityIdentifier = CameraElements.noseAdjustmentsConfigurationButton.id
         view.configurationButton.accessibilityLabel = "Nose Adjustment Settings"
         view.configurationButton.tintColor = .white
         view.configurationButton.setImage(
@@ -194,7 +194,7 @@ public class CameraActionsView: UIView {
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
             flipCameraButton, flashActionView, toneMapActionView, portraitActionView, retouchActionView,
-            rhinoplastyActionView, highDefinitionActionView,
+            noseAdjustmentsActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -202,7 +202,7 @@ public class CameraActionsView: UIView {
         stackView.setCustomSpacing(6, after: toneMapActionView)
         stackView.setCustomSpacing(6, after: portraitActionView)
         stackView.setCustomSpacing(6, after: retouchActionView)
-        stackView.setCustomSpacing(6, after: rhinoplastyActionView)
+        stackView.setCustomSpacing(6, after: noseAdjustmentsActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         return stackView

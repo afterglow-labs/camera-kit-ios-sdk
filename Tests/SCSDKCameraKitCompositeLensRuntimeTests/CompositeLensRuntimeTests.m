@@ -58,8 +58,8 @@
 - (void)testSupportedProcessorReceivesOrderedArrays
 {
     AGFakeCompositeProcessor *processor = [AGFakeCompositeProcessor new];
-    NSArray *lenses = @[ @"retouch", @"rhinoplasty", @"base", @"top" ];
-    NSArray *launchData = @[ [NSNull null], @"rhinoplasty-data", @"base-data", @"top-data" ];
+    NSArray *lenses = @[ @"retouch", @"noseAdjustments", @"base", @"top" ];
+    NSArray *launchData = @[ [NSNull null], @"noseAdjustments-data", @"base-data", @"top-data" ];
     __block NSUInteger completionCount = 0;
 
     SCCameraKitApplyCompositeLenses(processor, lenses, launchData, ^(BOOL success) {

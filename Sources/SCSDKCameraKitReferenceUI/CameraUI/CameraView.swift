@@ -730,7 +730,7 @@ extension CameraView {
         addSubview(noseAdjustmentsControlView)
         NSLayoutConstraint.activate([
             noseAdjustmentsControlView.trailingAnchor.constraint(
-                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.leadingAnchor,
+                equalTo: cameraActionsView.noseAdjustmentsActionView.toggleButton.leadingAnchor,
                 constant: -8
             ),
             noseAdjustmentsControlView.leadingAnchor.constraint(
@@ -738,7 +738,7 @@ extension CameraView {
                 constant: 8
             ),
             noseAdjustmentsControlView.topAnchor.constraint(
-                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.bottomAnchor
+                equalTo: cameraActionsView.noseAdjustmentsActionView.toggleButton.bottomAnchor
             ),
         ])
     }
@@ -759,18 +759,18 @@ extension CameraView {
     }
 
     private func setupNoseAdjustmentsButtons() {
-        cameraActionsView.rhinoplastyActionView.showActionSettings = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.showActionSettings = { [weak self] in
             self?.hideAllControls()
             self?.noseAdjustmentsControlView.isHidden = false
             self?.noseAdjustmentsControlDismissalHintLabel.isHidden = false
         }
 
-        cameraActionsView.rhinoplastyActionView.hideActionSettings = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.hideActionSettings = { [weak self] in
             self?.noseAdjustmentsControlView.isHidden = true
             self?.noseAdjustmentsControlDismissalHintLabel.isHidden = true
         }
 
-        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.toggleActionSettingsVisibility = { [weak self] in
             guard let self else { return }
             if self.noseAdjustmentsControlView.isHidden {
                 self.hideAllControls()

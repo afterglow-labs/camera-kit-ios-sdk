@@ -501,7 +501,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
             retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
-            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
+            noseAdjustments: state.noseAdjustmentsAvailable || cameraController.isNoseAdjustmentsAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         view.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
@@ -514,7 +514,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
             retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
-            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
+            noseAdjustments: state.noseAdjustmentsAvailable || cameraController.isNoseAdjustmentsAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
@@ -691,11 +691,11 @@ private final class InclusiveCameraControlsView: UIView {
             cameraController?.setRetouchEnabled(false)
         }
 
-        cameraActionsView.rhinoplastyActionView.enableAction = { [weak cameraController] in
-            cameraController?.setRhinoplastyEnabled(true)
+        cameraActionsView.noseAdjustmentsActionView.enableAction = { [weak cameraController] in
+            cameraController?.setNoseAdjustmentsEnabled(true)
         }
-        cameraActionsView.rhinoplastyActionView.disableAction = { [weak cameraController] in
-            cameraController?.setRhinoplastyEnabled(false)
+        cameraActionsView.noseAdjustmentsActionView.disableAction = { [weak cameraController] in
+            cameraController?.setNoseAdjustmentsEnabled(false)
         }
 
         configureControlVisibilityCallbacks()
@@ -722,10 +722,10 @@ private final class InclusiveCameraControlsView: UIView {
         } else {
             retouchAction.collapse()
         }
-        let noseAdjustmentsAction = cameraActionsView.rhinoplastyActionView
-        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        let noseAdjustmentsAction = cameraActionsView.noseAdjustmentsActionView
+        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isNoseAdjustmentsEnabled
         noseAdjustmentsControlView.values = cameraController.noseAdjustmentValues
-        if cameraController.isRhinoplastyEnabled, cameraController.isRhinoplastyAvailable {
+        if cameraController.isNoseAdjustmentsEnabled, cameraController.isNoseAdjustmentsAvailable {
             noseAdjustmentsAction.expand()
         } else {
             noseAdjustmentsAction.collapse()
@@ -768,13 +768,13 @@ private final class InclusiveCameraControlsView: UIView {
         tone: Bool,
         portrait: Bool,
         retouch: Bool,
-        rhinoplasty: Bool,
+        noseAdjustments: Bool,
         highDefinition: Bool
     ) {
         cameraActionsView.toneMapActionView.isHidden = !tone
         cameraActionsView.portraitActionView.isHidden = !portrait
         cameraActionsView.retouchActionView.isHidden = !retouch
-        cameraActionsView.rhinoplastyActionView.isHidden = !rhinoplasty
+        cameraActionsView.noseAdjustmentsActionView.isHidden = !noseAdjustments
         cameraActionsView.highDefinitionActionView.isHidden = !highDefinition
         if !tone {
             toneMapControlView.isHidden = true
@@ -784,8 +784,8 @@ private final class InclusiveCameraControlsView: UIView {
             portraitControlView.isHidden = true
             portraitControlDismissalHint.isHidden = true
         }
-        if !rhinoplasty {
-            cameraActionsView.rhinoplastyActionView.collapse()
+        if !noseAdjustments {
+            cameraActionsView.noseAdjustmentsActionView.collapse()
             noseAdjustmentsControlView.isHidden = true
             noseAdjustmentsControlDismissalHint.isHidden = true
         }
@@ -856,7 +856,7 @@ private final class InclusiveCameraControlsView: UIView {
             portraitControlDismissalHint.topAnchor.constraint(equalTo: portraitControlView.bottomAnchor),
 
             noseAdjustmentsControlView.trailingAnchor.constraint(
-                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.leadingAnchor,
+                equalTo: cameraActionsView.noseAdjustmentsActionView.toggleButton.leadingAnchor,
                 constant: -8
             ),
             noseAdjustmentsControlView.leadingAnchor.constraint(
@@ -864,7 +864,7 @@ private final class InclusiveCameraControlsView: UIView {
                 constant: 8
             ),
             noseAdjustmentsControlView.topAnchor.constraint(
-                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.bottomAnchor
+                equalTo: cameraActionsView.noseAdjustmentsActionView.toggleButton.bottomAnchor
             ),
             noseAdjustmentsControlDismissalHint.leadingAnchor.constraint(
                 equalTo: noseAdjustmentsControlView.leadingAnchor
@@ -909,13 +909,13 @@ private final class InclusiveCameraControlsView: UIView {
             self?.toggle(control: self?.portraitControlView, hint: self?.portraitControlDismissalHint)
         }
 
-        cameraActionsView.rhinoplastyActionView.showActionSettings = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.showActionSettings = { [weak self] in
             self?.show(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
         }
-        cameraActionsView.rhinoplastyActionView.hideActionSettings = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.hideActionSettings = { [weak self] in
             self?.hide(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
         }
-        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak self] in
+        cameraActionsView.noseAdjustmentsActionView.toggleActionSettingsVisibility = { [weak self] in
             self?.toggle(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
         }
     }
