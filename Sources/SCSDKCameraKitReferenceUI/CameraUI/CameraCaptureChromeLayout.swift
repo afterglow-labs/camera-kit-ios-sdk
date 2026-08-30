@@ -10,20 +10,20 @@ public enum CameraCaptureChromeLayout {
     public struct Metrics {
         public let scale: CGFloat
 
-        public var photoButtonDiameter: CGFloat { 34 * scale }
-        public var videoButtonDiameter: CGFloat { 38 * scale }
+        public var photoButtonDiameter: CGFloat { 52 * scale }
+        public var videoButtonDiameter: CGFloat { 58 * scale }
         public var captureControlSpacing: CGFloat { 18 * scale }
-        public var captureControlsHeight: CGFloat { 42 * scale }
-        public var captureControlsTopOffset: CGFloat { 70 * scale }
-        public var swiftUIFooterBottomPadding: CGFloat { 38 * scale }
+        public var captureControlsHeight: CGFloat { 64 * scale }
+        public var captureControlsBottomClearance: CGFloat { 116 * scale }
+        public var swiftUIFooterBottomPadding: CGFloat { 76 * scale }
 
-        public var photoSymbolSize: CGFloat { 15 * scale }
-        public var recordingStopSymbolSize: CGFloat { 12 * scale }
-        public var captureBorderWidth: CGFloat { 2 * scale }
+        public var photoSymbolSize: CGFloat { 21 * scale }
+        public var recordingStopSymbolSize: CGFloat { 16 * scale }
+        public var captureBorderWidth: CGFloat { 3 * scale }
 
         public var attributionTopOffset: CGFloat { 118 * scale }
         public var attributionTrailingInset: CGFloat { 16 * scale }
-        public var attributionFontSize: CGFloat { 12 * scale }
+        public var attributionFontSize: CGFloat { 11 * scale }
         public var attributionIconSize: CGFloat { 16 * scale }
         public var attributionSpacing: CGFloat { 4 * scale }
 
@@ -53,11 +53,11 @@ public enum CameraCaptureChromeLayout {
     }
 
     // Baseline aliases retained for source compatibility with host apps.
-    public static let photoButtonDiameter: CGFloat = 34
-    public static let videoButtonDiameter: CGFloat = 38
+    public static let photoButtonDiameter: CGFloat = 52
+    public static let videoButtonDiameter: CGFloat = 58
     public static let captureControlSpacing: CGFloat = 18
-    public static let captureControlsHeight: CGFloat = 42
-    public static let attributionFontSize: CGFloat = 12
+    public static let captureControlsHeight: CGFloat = 64
+    public static let attributionFontSize: CGFloat = 11
 
     public static func trailingClearance(for viewportWidth: CGFloat) -> CGFloat {
         metrics(for: CGSize(width: viewportWidth, height: iPhone16ProViewport.height)).cameraActionsTrailingInset

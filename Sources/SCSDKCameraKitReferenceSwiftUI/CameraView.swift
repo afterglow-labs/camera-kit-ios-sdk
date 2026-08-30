@@ -105,7 +105,7 @@ public struct CameraView: View {
                     CameraInclusiveControlsRepresentable(
                         state: state,
                         cameraController: cameraController,
-                        trailingClearance: metrics.cameraActionsTrailingInset
+                        metrics: metrics
                     )
                     .frame(width: viewportSize.width, height: viewportSize.height)
                     .edgesIgnoringSafeArea(.all)
@@ -506,7 +506,7 @@ private final class SnapAttributionContainerView: UIView {
 private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     @ObservedObject var state: CameraViewState
     let cameraController: CameraController
-    let trailingClearance: CGFloat
+    let metrics: CameraCaptureChromeLayout.Metrics
 
     func makeCoordinator() -> Coordinator {
         Coordinator(state: state, cameraController: cameraController)
@@ -516,7 +516,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         let view = InclusiveCameraControlsView()
         context.coordinator.controlsView = view
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
-        view.setTrailingClearance(trailingClearance)
+        view.apply(metrics: metrics)
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -528,7 +528,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
-        uiView.setTrailingClearance(trailingClearance)
+        uiView.apply(metrics: metrics)
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -586,7 +586,10 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 @available(iOS 14.0, *)
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
+    private var cameraActionsTopConstraint: NSLayoutConstraint?
     private var cameraActionsTrailingConstraint: NSLayoutConstraint?
+    private var cameraActionsWidthConstraint: NSLayoutConstraint?
+    private var controlSpacingConstraints: [NSLayoutConstraint] = []
     let flashControlView = FlashControlView()
     let flashControlDismissalHint = UILabel.controlDismissalHint()
     let toneMapControlView: AdjustmentControlView = {
@@ -620,8 +623,12 @@ private final class InclusiveCameraControlsView: UIView {
         setup()
     }
 
-    func setTrailingClearance(_ clearance: CGFloat) {
-        cameraActionsTrailingConstraint?.constant = -clearance
+    func apply(metrics: CameraCaptureChromeLayout.Metrics) {
+        cameraActionsTopConstraint?.constant = metrics.cameraActionsTopInset
+        cameraActionsTrailingConstraint?.constant = -metrics.cameraActionsTrailingInset
+        cameraActionsWidthConstraint?.constant = metrics.cameraActionsWidth
+        controlSpacingConstraints.forEach { $0.constant = -8 * metrics.scale }
+        cameraActionsView.apply(scale: metrics.scale)
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -793,26 +800,46 @@ private final class InclusiveCameraControlsView: UIView {
             equalTo: trailingAnchor,
             constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
         )
+        let topConstraint = cameraActionsView.topAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.topAnchor,
+            constant: 6
+        )
+        let widthConstraint = cameraActionsView.widthAnchor.constraint(equalToConstant: 40)
+        let flashSpacingConstraint = flashControlView.trailingAnchor.constraint(
+            equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor,
+            constant: -8
+        )
+        let toneSpacingConstraint = toneMapControlView.trailingAnchor.constraint(
+            equalTo: cameraActionsView.toneMapActionView.toggleButton.leadingAnchor,
+            constant: -8
+        )
+        let portraitSpacingConstraint = portraitControlView.trailingAnchor.constraint(
+            equalTo: cameraActionsView.portraitActionView.toggleButton.leadingAnchor,
+            constant: -8
+        )
+        cameraActionsTopConstraint = topConstraint
         cameraActionsTrailingConstraint = trailingConstraint
+        cameraActionsWidthConstraint = widthConstraint
+        controlSpacingConstraints = [flashSpacingConstraint, toneSpacingConstraint, portraitSpacingConstraint]
 
         NSLayoutConstraint.activate([
-            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6),
+            topConstraint,
             trailingConstraint,
-            cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
+            widthConstraint,
 
-            flashControlView.trailingAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor, constant: -8),
+            flashSpacingConstraint,
             flashControlView.topAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
             flashControlDismissalHint.leadingAnchor.constraint(equalTo: flashControlView.leadingAnchor),
             flashControlDismissalHint.trailingAnchor.constraint(equalTo: flashControlView.trailingAnchor),
             flashControlDismissalHint.topAnchor.constraint(equalTo: flashControlView.bottomAnchor),
 
-            toneMapControlView.trailingAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.leadingAnchor, constant: -8),
+            toneSpacingConstraint,
             toneMapControlView.topAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.bottomAnchor),
             toneMapControlDismissalHint.leadingAnchor.constraint(equalTo: toneMapControlView.leadingAnchor),
             toneMapControlDismissalHint.trailingAnchor.constraint(equalTo: toneMapControlView.trailingAnchor),
             toneMapControlDismissalHint.topAnchor.constraint(equalTo: toneMapControlView.bottomAnchor),
 
-            portraitControlView.trailingAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.leadingAnchor, constant: -8),
+            portraitSpacingConstraint,
             portraitControlView.topAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.bottomAnchor),
             portraitControlDismissalHint.leadingAnchor.constraint(equalTo: portraitControlView.leadingAnchor),
             portraitControlDismissalHint.trailingAnchor.constraint(equalTo: portraitControlView.trailingAnchor),

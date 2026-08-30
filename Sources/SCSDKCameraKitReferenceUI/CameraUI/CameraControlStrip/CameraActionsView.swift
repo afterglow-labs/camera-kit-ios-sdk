@@ -4,6 +4,9 @@
 import UIKit
 
 public class CameraActionsView: UIView {
+    private var layoutScale: CGFloat = 1
+    private var flipCameraHeightConstraint: NSLayoutConstraint?
+
     /// Horizontal clearance for the Lens Controls strip at the supplied safe-area width.
     public static func adaptiveTrailingInset(forAvailableWidth width: CGFloat) -> CGFloat {
         CameraCaptureChromeLayout.trailingClearance(for: width)
@@ -239,7 +242,32 @@ public class CameraActionsView: UIView {
     override public func layoutSubviews() {
         super.layoutSubviews()
         for button in buttonStackView.arrangedSubviews.compactMap({ $0 as? UIButton }) {
-            button.applyCameraActionButtonShadow()
+            button.applyCameraActionButtonShadow(scale: layoutScale)
+        }
+    }
+
+    /// Applies the single camera-chrome scale to the complete action strip.
+    public func apply(scale: CGFloat) {
+        guard scale.isFinite, scale > 0 else { return }
+        layoutScale = scale
+        layer.cornerRadius = 20 * scale
+        buttonStackView.spacing = 4 * scale
+        buttonStackView.setCustomSpacing(6 * scale, after: flashActionView)
+        buttonStackView.setCustomSpacing(6 * scale, after: toneMapActionView)
+        buttonStackView.setCustomSpacing(6 * scale, after: portraitActionView)
+        buttonStackView.setCustomSpacing(6 * scale, after: retouchActionView)
+        buttonStackView.setCustomSpacing(6 * scale, after: rhinoplastyActionView)
+        flipCameraHeightConstraint?.constant = 40 * scale
+        flipCameraButton.imageView?.transform = CGAffineTransform(scaleX: scale, y: scale)
+        for actionView in [
+            flashActionView,
+            toneMapActionView,
+            portraitActionView,
+            retouchActionView,
+            rhinoplastyActionView,
+            highDefinitionActionView,
+        ] {
+            actionView.apply(scale: scale)
         }
     }
 
@@ -283,6 +311,8 @@ extension CameraActionsView {
             buttonStackView.topAnchor.constraint(equalTo: topAnchor),
             buttonStackView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        NSLayoutConstraint.activate([flipCameraButton.heightAnchor.constraint(equalToConstant: 40)])
+        let flipCameraHeightConstraint = flipCameraButton.heightAnchor.constraint(equalToConstant: 40)
+        self.flipCameraHeightConstraint = flipCameraHeightConstraint
+        NSLayoutConstraint.activate([flipCameraHeightConstraint])
     }
 }

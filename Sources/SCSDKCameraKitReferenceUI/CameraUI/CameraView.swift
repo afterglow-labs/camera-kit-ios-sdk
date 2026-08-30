@@ -89,7 +89,7 @@ open class CameraView: UIView {
     private var photoButtonHeightConstraint: NSLayoutConstraint?
     private var videoButtonWidthConstraint: NSLayoutConstraint?
     private var videoButtonHeightConstraint: NSLayoutConstraint?
-    private var captureControlsTopConstraint: NSLayoutConstraint?
+    private var captureControlsBottomConstraint: NSLayoutConstraint?
     private var captureControlsHeightConstraint: NSLayoutConstraint?
     private var attributionTopConstraint: NSLayoutConstraint?
     private var attributionTrailingConstraint: NSLayoutConstraint?
@@ -282,6 +282,7 @@ open class CameraView: UIView {
         cameraActionsTopConstraint?.constant = metrics.cameraActionsTopInset
         cameraActionsTrailingConstraint?.constant = -metrics.cameraActionsTrailingInset
         cameraActionsWidthConstraint?.constant = metrics.cameraActionsWidth
+        cameraActionsView.apply(scale: metrics.scale)
 
         carouselTrailingConstraint?.constant = -metrics.carouselTrailingInset
         carouselTopConstraint?.constant = metrics.carouselTopSpacing
@@ -292,7 +293,7 @@ open class CameraView: UIView {
         photoButtonHeightConstraint?.constant = metrics.photoButtonDiameter
         videoButtonWidthConstraint?.constant = metrics.videoButtonDiameter
         videoButtonHeightConstraint?.constant = metrics.videoButtonDiameter
-        captureControlsTopConstraint?.constant = -metrics.captureControlsTopOffset
+        captureControlsBottomConstraint?.constant = -metrics.captureControlsBottomClearance
         captureControlsHeightConstraint?.constant = metrics.captureControlsHeight
         captureControlsView.spacing = metrics.captureControlSpacing
 
@@ -493,16 +494,16 @@ extension CameraView {
         let photoHeightConstraint = photoCaptureButton.heightAnchor.constraint(equalToConstant: 34)
         let videoWidthConstraint = videoCaptureButton.widthAnchor.constraint(equalToConstant: 38)
         let videoHeightConstraint = videoCaptureButton.heightAnchor.constraint(equalToConstant: 38)
-        let topConstraint = captureControlsView.topAnchor.constraint(
-            equalTo: cameraBottomBar.topAnchor,
-            constant: -70
+        let bottomConstraint = captureControlsView.bottomAnchor.constraint(
+            equalTo: bottomAnchor,
+            constant: -116
         )
         let heightConstraint = captureControlsView.heightAnchor.constraint(equalToConstant: 42)
         photoButtonWidthConstraint = photoWidthConstraint
         photoButtonHeightConstraint = photoHeightConstraint
         videoButtonWidthConstraint = videoWidthConstraint
         videoButtonHeightConstraint = videoHeightConstraint
-        captureControlsTopConstraint = topConstraint
+        captureControlsBottomConstraint = bottomConstraint
         captureControlsHeightConstraint = heightConstraint
 
         NSLayoutConstraint.activate([
@@ -511,7 +512,7 @@ extension CameraView {
             videoWidthConstraint,
             videoHeightConstraint,
             captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            topConstraint,
+            bottomConstraint,
             heightConstraint,
         ])
     }

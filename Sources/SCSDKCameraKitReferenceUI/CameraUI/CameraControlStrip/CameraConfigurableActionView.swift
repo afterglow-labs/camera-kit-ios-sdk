@@ -5,6 +5,9 @@ import UIKit
 
 /// View to use for camera actions that can be enabled/disabled and configured via separate buttons.
 public class CameraConfigurableActionView: UIView {
+    private var layoutScale: CGFloat = 1
+    private var buttonSizeConstraints: [NSLayoutConstraint] = []
+
     // MARK: - Public
 
     /// Whether or not the action is currently configurable via a control view.
@@ -94,8 +97,19 @@ public class CameraConfigurableActionView: UIView {
 
     override public func layoutSubviews() {
         super.layoutSubviews()
-        toggleButton.applyCameraActionButtonShadow()
-        configurationButton.applyCameraActionButtonShadow()
+        toggleButton.applyCameraActionButtonShadow(scale: layoutScale)
+        configurationButton.applyCameraActionButtonShadow(scale: layoutScale)
+    }
+
+    /// Applies the parent camera chrome's uniform scale to both action buttons.
+    public func apply(scale: CGFloat) {
+        guard scale.isFinite, scale > 0 else { return }
+        layoutScale = scale
+        layer.cornerRadius = 20 * scale
+        blurEffectView.layer.cornerRadius = 20 * scale
+        buttonSizeConstraints.forEach { $0.constant = 40 * scale }
+        toggleButton.imageView?.transform = CGAffineTransform(scaleX: scale, y: scale)
+        configurationButton.imageView?.transform = CGAffineTransform(scaleX: scale, y: scale)
     }
 
     // MARK: - Private
@@ -215,10 +229,12 @@ extension CameraConfigurableActionView {
         ])
 
         for subview in buttonStackView.arrangedSubviews {
-            NSLayoutConstraint.activate([
+            let constraints = [
                 subview.widthAnchor.constraint(equalToConstant: 40),
                 subview.heightAnchor.constraint(equalToConstant: 40),
-            ])
+            ]
+            buttonSizeConstraints.append(contentsOf: constraints)
+            NSLayoutConstraint.activate(constraints)
         }
     }
 }
