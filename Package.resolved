@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "SnapSDK",
+        "repositoryURL": "https://github.com/afterglow-labs/snap-kit-spm",
+        "state": {
+          "branch": null,
+          "revision": "010e7100065a1f6f9f393af7a2d3432cde26791f",
+          "version": "2.6.4"
+        }
+      }
+    ]
+  },
+  "version": 1
+}

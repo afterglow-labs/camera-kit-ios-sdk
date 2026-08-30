@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "SCSDKCameraKitPushToDeviceExtension", targets: ["SCSDKCameraKitPushToDeviceExtension_Wrapper"]),
         .library(name: "SCSDKCameraKitReferenceUI", targets: ["SCSDKCameraKitReferenceUI"]),
         .library(name: "SCSDKCameraKitReferenceSwiftUI", targets: ["SCSDKCameraKitReferenceSwiftUI"]),
+        .library(name: "SCSDKCameraKitLocalLens", targets: ["SCSDKCameraKitLocalLens"]),
     ],
     dependencies: [
         .package(url: "https://github.com/afterglow-labs/snap-kit-spm", .upToNextMajor(from: "2.6.4"))
@@ -58,6 +59,27 @@ let package = Package(
                 .copy("Resources/Strings")
             ]
         ),
-        .target(name: "SCSDKCameraKitReferenceSwiftUI", dependencies: ["SCSDKCameraKitReferenceUI"], path: "Sources/SCSDKCameraKitReferenceSwiftUI")
+        .target(name: "SCSDKCameraKitReferenceSwiftUI", dependencies: ["SCSDKCameraKitReferenceUI"], path: "Sources/SCSDKCameraKitReferenceSwiftUI"),
+        .target(
+            name: "SCSDKCameraKitLocalLensRuntime",
+            dependencies: ["SCSDKCameraKit"],
+            path: "Sources/SCSDKCameraKitLocalLensRuntime",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "SCSDKCameraKitLocalLens",
+            dependencies: ["SCSDKCameraKit", "SCSDKCameraKitLocalLensRuntime"],
+            path: "Sources/SCSDKCameraKitLocalLens"
+        ),
+        .testTarget(
+            name: "SCSDKCameraKitLocalLensTests",
+            dependencies: ["SCSDKCameraKitLocalLens", "SCSDKCameraKitReferenceUI"],
+            path: "Tests/SCSDKCameraKitLocalLensTests"
+        ),
+        .testTarget(
+            name: "SCSDKCameraKitLocalLensRuntimeTests",
+            dependencies: ["SCSDKCameraKitLocalLensRuntime"],
+            path: "Tests/SCSDKCameraKitLocalLensRuntimeTests"
+        )
     ]
 )
