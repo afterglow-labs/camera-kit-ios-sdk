@@ -9,6 +9,10 @@ public class SnapAttributionView: UIView {
         static let snapGhostOutline = "ck_snap_ghost_outline"
     }
 
+    private var iconWidthConstraint: NSLayoutConstraint?
+    private var iconHeightConstraint: NSLayoutConstraint?
+    private var iconSpacingConstraint: NSLayoutConstraint?
+
     public let poweredByLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -61,14 +65,41 @@ public class SnapAttributionView: UIView {
     }
 
     private func setupConstraints() {
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 84),
+        let baseline = CameraCaptureChromeLayout.metrics(
+            for: CameraCaptureChromeLayout.iPhone16ProViewport
+        )
+        let iconWidthConstraint = snapIconImage.widthAnchor.constraint(
+            equalToConstant: baseline.attributionIconSize
+        )
+        let iconHeightConstraint = snapIconImage.heightAnchor.constraint(
+            equalToConstant: baseline.attributionIconSize
+        )
+        let iconSpacingConstraint = snapIconImage.leadingAnchor.constraint(
+            equalTo: poweredByLabel.trailingAnchor,
+            constant: baseline.attributionSpacing
+        )
+        self.iconWidthConstraint = iconWidthConstraint
+        self.iconHeightConstraint = iconHeightConstraint
+        self.iconSpacingConstraint = iconSpacingConstraint
 
+        NSLayoutConstraint.activate([
             poweredByLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
             poweredByLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            snapIconImage.leadingAnchor.constraint(equalTo: poweredByLabel.trailingAnchor, constant: 4),
+            iconSpacingConstraint,
+            snapIconImage.trailingAnchor.constraint(equalTo: trailingAnchor),
+            snapIconImage.topAnchor.constraint(equalTo: topAnchor),
+            snapIconImage.bottomAnchor.constraint(equalTo: bottomAnchor),
             snapIconImage.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconWidthConstraint,
+            iconHeightConstraint,
         ])
+    }
+
+    public func apply(metrics: CameraCaptureChromeLayout.Metrics) {
+        poweredByLabel.font = UIFont.sc_regularFont(size: metrics.attributionFontSize)
+        iconWidthConstraint?.constant = metrics.attributionIconSize
+        iconHeightConstraint?.constant = metrics.attributionIconSize
+        iconSpacingConstraint?.constant = metrics.attributionSpacing
+        invalidateIntrinsicContentSize()
     }
 }

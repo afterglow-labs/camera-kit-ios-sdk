@@ -89,9 +89,7 @@ public struct CameraView: View {
 
         GeometryReader { proxy in
             let viewportSize = proxy.size
-            let trailingClearance = CameraCaptureChromeLayout.trailingClearance(
-                for: viewportSize.width
-            )
+            let metrics = CameraCaptureChromeLayout.metrics(for: viewportSize)
 
             ZStack {
                 PreviewLayer(
@@ -103,38 +101,40 @@ public struct CameraView: View {
                     recordingPreviewMode: recordingPreviewMode
                 )
                 .edgesIgnoringSafeArea(.all)
+                if cameraKitControlsVisible {
+                    CameraInclusiveControlsRepresentable(
+                        state: state,
+                        cameraController: cameraController,
+                        trailingClearance: metrics.cameraActionsTrailingInset
+                    )
+                    .frame(width: viewportSize.width, height: viewportSize.height)
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+                }
                 if captureChromeVisible {
                     VStack {
+                        LensHeader(lensName: state.activeLensDisplayName)
                         MessageView(
                             lensName: state.activeLensDisplayName,
                             lensID: state.activeLensDisplayID,
                             showing: state.showingMessage
                         )
-                        .padding(.top, CameraCaptureChromeLayout.lensStatusTopClearance)
                         Spacer()
                         MediaPickerView(provider: cameraController.lensMediaProvider)
                         LensFooter(
                             state: state,
                             cameraController: cameraController,
-                            onVideoRecorded: onVideoRecorded
+                            onVideoRecorded: onVideoRecorded,
+                            metrics: metrics
                         )
                     }
                     .transition(.opacity)
                 }
                 if state.showingSnapAttribution && captureChromeVisible {
-                    SnapAttributionContainerRepresentable()
+                    SnapAttributionContainerRepresentable(metrics: metrics)
                         .edgesIgnoringSafeArea(.all)
                         .allowsHitTesting(false)
                         .transition(.opacity)
-                }
-                if cameraKitControlsVisible {
-                    CameraInclusiveControlsRepresentable(
-                        state: state,
-                        cameraController: cameraController,
-                        trailingClearance: trailingClearance
-                    )
-                    .frame(width: viewportSize.width, height: viewportSize.height)
-                    .transition(.opacity)
                 }
                 if lensCarouselVisible {
                     HStack {
@@ -148,11 +148,11 @@ public struct CameraView: View {
                             cameraController: cameraController,
                             lensContextMenuProvider: lensContextMenuProvider
                         )
-                        .frame(width: 62)
+                        .frame(width: metrics.carouselWidth)
                         .frame(maxHeight: .infinity)
-                        .padding(.top, LensUILayout.carouselTopInset)
-                        .padding(.bottom, LensUILayout.carouselBottomInset)
-                        .padding(.trailing, trailingClearance)
+                        .padding(.top, metrics.swiftUICarouselTopInset)
+                        .padding(.bottom, metrics.swiftUICarouselBottomInset)
+                        .padding(.trailing, metrics.carouselTrailingInset)
                     }
                     .frame(width: viewportSize.width, height: viewportSize.height)
                     .transition(.opacity)
@@ -170,7 +170,6 @@ public struct CameraView: View {
                 }
             }
             .frame(width: viewportSize.width, height: viewportSize.height)
-            .clipped()
         }
         .onAppear {
             state.chromeHidden = chromeHidden
@@ -444,14 +443,22 @@ private final class LayoutAwareRingLightContainerView: UIView {
 }
 
 private struct SnapAttributionContainerRepresentable: UIViewRepresentable {
+    let metrics: CameraCaptureChromeLayout.Metrics
+
     func makeUIView(context: Context) -> SnapAttributionContainerView {
-        SnapAttributionContainerView()
+        let view = SnapAttributionContainerView()
+        view.apply(metrics: metrics)
+        return view
     }
 
-    func updateUIView(_ uiView: SnapAttributionContainerView, context: Context) {}
+    func updateUIView(_ uiView: SnapAttributionContainerView, context: Context) {
+        uiView.apply(metrics: metrics)
+    }
 }
 
 private final class SnapAttributionContainerView: UIView {
+    private var topConstraint: NSLayoutConstraint?
+    private var trailingConstraint: NSLayoutConstraint?
     private let snapAttributionView: SnapAttributionView = {
         let view = SnapAttributionView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -472,13 +479,26 @@ private final class SnapAttributionContainerView: UIView {
         backgroundColor = .clear
         isUserInteractionEnabled = false
         addSubview(snapAttributionView)
+        let topConstraint = snapAttributionView.topAnchor.constraint(
+            equalTo: bottomAnchor,
+            constant: -118
+        )
+        let trailingConstraint = snapAttributionView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -16
+        )
+        self.topConstraint = topConstraint
+        self.trailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
-            snapAttributionView.bottomAnchor.constraint(
-                equalTo: bottomAnchor,
-                constant: -CameraCaptureChromeLayout.attributionBottomClearance
-            ),
-            trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
+            topConstraint,
+            trailingConstraint,
         ])
+    }
+
+    func apply(metrics: CameraCaptureChromeLayout.Metrics) {
+        topConstraint?.constant = -metrics.attributionTopOffset
+        trailingConstraint?.constant = -metrics.attributionTrailingInset
+        snapAttributionView.apply(metrics: metrics)
     }
 }
 
@@ -504,7 +524,6 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
-        view.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
         return view
     }
 
@@ -519,7 +538,6 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
         uiView.syncControlState(with: cameraController)
-        uiView.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
     }
 
     final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
@@ -569,18 +587,6 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
     private var cameraActionsTrailingConstraint: NSLayoutConstraint?
-    let lensLabel: UILabel = {
-        let label = UILabel()
-        label.accessibilityIdentifier = CameraElements.lensLabel.id
-        label.font = .preferredFont(forTextStyle: .headline)
-        label.textColor = .white
-        label.textAlignment = .center
-        label.layer.shadowColor = UIColor.black.cgColor
-        label.layer.shadowOpacity = 0.8
-        label.layer.shadowRadius = 2
-        label.layer.shadowOffset = CGSize(width: 0, height: 1)
-        return label
-    }()
     let flashControlView = FlashControlView()
     let flashControlDismissalHint = UILabel.controlDismissalHint()
     let toneMapControlView: AdjustmentControlView = {
@@ -717,11 +723,6 @@ private final class InclusiveCameraControlsView: UIView {
         )
     }
 
-    func updateLensTitle(_ title: String?) {
-        lensLabel.text = title
-        lensLabel.isHidden = title?.isEmpty != false
-    }
-
     private func syncAdjustment(
         _ action: CameraConfigurableActionView,
         control: AdjustmentControlView,
@@ -774,7 +775,7 @@ private final class InclusiveCameraControlsView: UIView {
 
     private func setup() {
         backgroundColor = .clear
-        [cameraActionsView, lensLabel, flashControlView, flashControlDismissalHint, toneMapControlView,
+        [cameraActionsView, flashControlView, flashControlDismissalHint, toneMapControlView,
          toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
@@ -798,11 +799,6 @@ private final class InclusiveCameraControlsView: UIView {
             cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6),
             trailingConstraint,
             cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
-
-            lensLabel.centerYAnchor.constraint(equalTo: cameraActionsView.flipCameraButton.centerYAnchor),
-            lensLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            lensLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 56),
-            lensLabel.trailingAnchor.constraint(lessThanOrEqualTo: cameraActionsView.leadingAnchor, constant: -8),
 
             flashControlView.trailingAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor, constant: -8),
             flashControlView.topAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
@@ -883,6 +879,19 @@ private final class InclusiveCameraControlsView: UIView {
     }
 }
 
+/// A sample implementation of a header view, which shows the lens name.
+struct LensHeader: View {
+    let lensName: String
+
+    var body: some View {
+        Text(lensName)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .font(.headline)
+            .foregroundColor(.white)
+            .padding()
+    }
+}
+
 @available(iOS 14.0, *)
 /// A reference implementation of a footer view, which contains a lens carousel, a camera button, and a close button
 struct LensFooter: View {
@@ -895,20 +904,28 @@ struct LensFooter: View {
     /// Receives completed recordings instead of opening the reference video preview.
     let onVideoRecorded: ((URL) -> Void)?
 
+    /// Uniform geometry derived from the iPhone 16 Pro baseline.
+    let metrics: CameraCaptureChromeLayout.Metrics
+
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: CameraCaptureChromeLayout.captureControlSpacing) {
+        VStack(spacing: 8 * metrics.scale) {
+            HStack(spacing: metrics.captureControlSpacing) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
-                        .font(.system(size: 21, weight: .semibold))
+                        .font(.system(size: metrics.photoSymbolSize, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(
-                            width: CameraCaptureChromeLayout.photoButtonDiameter,
-                            height: CameraCaptureChromeLayout.photoButtonDiameter
+                            width: metrics.photoButtonDiameter,
+                            height: metrics.photoButtonDiameter
                         )
                         .background(Color.black.opacity(0.42))
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 3))
+                        .overlay(
+                            Circle().stroke(
+                                Color.white.opacity(0.9),
+                                lineWidth: metrics.captureBorderWidth
+                            )
+                        )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Take photo")
@@ -917,17 +934,23 @@ struct LensFooter: View {
                     Circle()
                         .fill(state.recording ? Color.red.opacity(0.72) : Color.red)
                         .frame(
-                            width: CameraCaptureChromeLayout.videoButtonDiameter,
-                            height: CameraCaptureChromeLayout.videoButtonDiameter
+                            width: metrics.videoButtonDiameter,
+                            height: metrics.videoButtonDiameter
                         )
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.9), lineWidth: 3)
+                                .stroke(
+                                    Color.white.opacity(0.9),
+                                    lineWidth: metrics.captureBorderWidth
+                                )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: 3 * metrics.scale)
                                 .fill(Color.white.opacity(state.recording ? 0.95 : 0))
-                                .frame(width: 16, height: 16)
+                                .frame(
+                                    width: metrics.recordingStopSymbolSize,
+                                    height: metrics.recordingStopSymbolSize
+                                )
                         )
                 }
                 .buttonStyle(.plain)
@@ -937,8 +960,7 @@ struct LensFooter: View {
                     state.recordingFinalizing ? "Finishing recording" : (state.recording ? "Stop recording" : "Start recording")
                 )
             }
-            .frame(height: CameraCaptureChromeLayout.captureControlsHeight)
-            .offset(x: CameraCaptureChromeLayout.captureControlsCenterOffset)
+            .frame(height: metrics.captureControlsHeight)
 
             Button(
                 action: {
@@ -948,13 +970,10 @@ struct LensFooter: View {
                     Image("ck_close_circle", bundle: BundleHelper.resourcesBundle)
                 }
             )
-            .frame(width: 32, height: 32)
+            .frame(width: 32 * metrics.scale, height: 32 * metrics.scale)
             .opacity(state.selectedLens == nil ? 0 : 1)
         }
-        .padding(
-            .bottom,
-            CameraCaptureChromeLayout.captureControlsBottomClearance - 40
-        )
+        .padding(.bottom, metrics.swiftUIFooterBottomPadding)
     }
 
     private func takePhoto() {
@@ -1001,23 +1020,23 @@ struct MessageView: View {
     let showing: Bool
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(lensName)
-                .font(.headline)
-                .foregroundColor(.white)
-            Text(lensID)
-                .font(.headline)
-                .foregroundColor(.white)
+        HStack {
+            VStack(alignment: .leading) {
+                Text(lensName)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text(lensID)
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .padding()
+            .background(Color(white: 0, opacity: 0.65))
+            .cornerRadius(4)
+            .opacity(showing ? 1 : 0)
+            .animation(.easeInOut, value: showing)
+            .padding()
+            Spacer()
         }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(white: 0, opacity: 0.65))
-        .cornerRadius(4)
-        .opacity(showing ? 1 : 0)
-        .animation(.easeInOut, value: showing)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, 16)
     }
 }
 

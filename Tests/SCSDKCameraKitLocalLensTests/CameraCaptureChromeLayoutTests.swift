@@ -3,28 +3,38 @@ import XCTest
 @testable import SCSDKCameraKitReferenceUI
 
 final class CameraCaptureChromeLayoutTests: XCTestCase {
-    func testLensControlsUseAdaptiveSafeAreaClearance() {
-        for width in [320.0, 393.0, 600.0] {
-            let cameraView = laidOutCameraView(width: width)
-            let safeFrame = cameraView.safeAreaLayoutGuide.layoutFrame
-            let expectedInset = CameraActionsView.adaptiveTrailingInset(
-                forAvailableWidth: safeFrame.width
-            )
+    func testIPhone16ProUsesTheUnmodifiedBaselineGeometry() {
+        let metrics = CameraCaptureChromeLayout.metrics(
+            for: CameraCaptureChromeLayout.iPhone16ProViewport
+        )
 
-            XCTAssertEqual(
-                safeFrame.maxX - cameraView.cameraActionsView.frame.maxX,
-                expectedInset,
-                accuracy: 0.5,
-                "Unexpected Lens Controls inset at width \(width)"
-            )
-        }
+        XCTAssertEqual(metrics.scale, 1, accuracy: 0.0001)
+        XCTAssertEqual(metrics.photoButtonDiameter, 34, accuracy: 0.01)
+        XCTAssertEqual(metrics.videoButtonDiameter, 38, accuracy: 0.01)
+        XCTAssertEqual(metrics.captureControlSpacing, 18, accuracy: 0.01)
+        XCTAssertEqual(metrics.captureControlsHeight, 42, accuracy: 0.01)
+        XCTAssertEqual(metrics.swiftUIFooterBottomPadding, 38, accuracy: 0.01)
+        XCTAssertEqual(metrics.attributionFontSize, 12, accuracy: 0.01)
     }
 
-    func testCompactCameraChromeMovesFurtherInsideTheViewport() {
-        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 320), 28)
-        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 375), 28)
-        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 393), 24)
-        XCTAssertEqual(CameraCaptureChromeLayout.trailingClearance(for: 430), 20)
+    func testOtherDevicesUseOneUniformScaleFromTheIPhone16Pro() {
+        let compactViewport = CGSize(width: 375, height: 812)
+        let expectedScale = min(375.0 / 402.0, 812.0 / 874.0)
+        let metrics = CameraCaptureChromeLayout.metrics(for: compactViewport)
+
+        XCTAssertEqual(metrics.scale, expectedScale, accuracy: 0.0001)
+        XCTAssertEqual(metrics.photoButtonDiameter, 34 * expectedScale, accuracy: 0.01)
+        XCTAssertEqual(metrics.videoButtonDiameter, 38 * expectedScale, accuracy: 0.01)
+        XCTAssertEqual(metrics.captureControlSpacing, 18 * expectedScale, accuracy: 0.01)
+        XCTAssertEqual(metrics.attributionFontSize, 12 * expectedScale, accuracy: 0.01)
+    }
+
+    func testInvalidViewportFallsBackToBaselineScale() {
+        XCTAssertEqual(
+            CameraCaptureChromeLayout.metrics(for: .zero).scale,
+            1,
+            accuracy: 0.0001
+        )
     }
 
     func testNoseAdjustmentsControlUsesTheLensName() {
@@ -36,58 +46,67 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         )
     }
 
-    func testPhotoAndRecordButtonsAreAtLeastFiftyPercentLarger() {
+    func testUIKitRestoresTheBaselineCaptureGroup() {
         let cameraView = laidOutCameraView()
-
-        XCTAssertGreaterThanOrEqual(cameraView.photoCaptureButton.bounds.width, 51)
-        XCTAssertGreaterThanOrEqual(cameraView.photoCaptureButton.bounds.height, 51)
-        XCTAssertGreaterThanOrEqual(cameraView.videoCaptureButton.bounds.width, 57)
-        XCTAssertGreaterThanOrEqual(cameraView.videoCaptureButton.bounds.height, 57)
-    }
-
-    func testRecordButtonIsCenteredWithPhotoButtonToItsLeft() {
-        let cameraView = laidOutCameraView()
-        let photoFrame = cameraView.photoCaptureButton.convert(cameraView.photoCaptureButton.bounds, to: cameraView)
-        let recordFrame = cameraView.videoCaptureButton.convert(cameraView.videoCaptureButton.bounds, to: cameraView)
-
-        XCTAssertEqual(recordFrame.midX, cameraView.bounds.midX, accuracy: 0.5)
-        XCTAssertLessThan(photoFrame.maxX, recordFrame.minX)
-    }
-
-    func testCaptureButtonsClearTheRaisedBottomChrome() {
-        let cameraView = laidOutCameraView()
-        let bottomClearance = cameraView.bounds.maxY - cameraView.captureControlsView.frame.maxY
-
-        XCTAssertGreaterThanOrEqual(bottomClearance, 116)
-    }
-
-    func testAttributionUsesElevenPointTextAndSitsAboveTheRaisedChrome() {
-        let cameraView = laidOutCameraView()
-        let bottomClearance = cameraView.bounds.maxY - cameraView.snapAttributionView.frame.maxY
-
-        XCTAssertEqual(cameraView.snapAttributionView.poweredByLabel.font.pointSize, 11, accuracy: 0.01)
-        XCTAssertEqual(bottomClearance, 108, accuracy: 1)
-    }
-
-    func testTemporaryLensStatusIsCenteredBelowTheUnsafeTopRegion() {
-        let cameraView = laidOutCameraView()
-        cameraView.messageView.label.text = "Lens name\nLens ID"
-        cameraView.messageView.label.numberOfLines = 2
-        cameraView.setNeedsLayout()
-        cameraView.layoutIfNeeded()
-
-        XCTAssertEqual(cameraView.messageView.frame.midX, cameraView.bounds.midX, accuracy: 0.5)
-        XCTAssertGreaterThanOrEqual(
-            cameraView.messageView.frame.minY,
-            cameraView.safeAreaInsets.top + 72
+        let photoFrame = cameraView.photoCaptureButton.convert(
+            cameraView.photoCaptureButton.bounds,
+            to: cameraView
         )
+        let videoFrame = cameraView.videoCaptureButton.convert(
+            cameraView.videoCaptureButton.bounds,
+            to: cameraView
+        )
+        let groupFrame = cameraView.captureControlsView.convert(
+            cameraView.captureControlsView.bounds,
+            to: cameraView
+        )
+
+        XCTAssertEqual(photoFrame.width, 34, accuracy: 0.5)
+        XCTAssertEqual(videoFrame.width, 38, accuracy: 0.5)
+        XCTAssertEqual(groupFrame.midX, cameraView.bounds.midX, accuracy: 0.5)
+        XCTAssertLessThan(photoFrame.maxX, videoFrame.minX)
+    }
+
+    func testUIKitScalesTheSameBaselineOnACompactViewport() {
+        let viewport = CGSize(width: 375, height: 812)
+        let cameraView = laidOutCameraView(width: viewport.width, height: viewport.height)
+        let metrics = CameraCaptureChromeLayout.metrics(for: viewport)
+        let photoFrame = cameraView.photoCaptureButton.convert(
+            cameraView.photoCaptureButton.bounds,
+            to: cameraView
+        )
+        let videoFrame = cameraView.videoCaptureButton.convert(
+            cameraView.videoCaptureButton.bounds,
+            to: cameraView
+        )
+
+        XCTAssertEqual(photoFrame.width, metrics.photoButtonDiameter, accuracy: 0.5)
+        XCTAssertEqual(videoFrame.width, metrics.videoButtonDiameter, accuracy: 0.5)
+    }
+
+    func testAttributionContentRemainsInsideItsBounds() {
+        for viewport in [CGSize(width: 375, height: 812), CameraCaptureChromeLayout.iPhone16ProViewport] {
+            let cameraView = laidOutCameraView(width: viewport.width, height: viewport.height)
+            let metrics = CameraCaptureChromeLayout.metrics(for: viewport)
+            let attribution = cameraView.snapAttributionView
+            let iconFrame = attribution.snapIconImage.convert(
+                attribution.snapIconImage.bounds,
+                to: attribution
+            )
+            let attributionFrame = attribution.convert(attribution.bounds, to: cameraView)
+
+            XCTAssertGreaterThan(attribution.bounds.width, 84 * metrics.scale)
+            XCTAssertLessThanOrEqual(iconFrame.maxX, attribution.bounds.maxX + 0.5)
+            XCTAssertLessThanOrEqual(attributionFrame.maxX, cameraView.safeAreaLayoutGuide.layoutFrame.maxX)
+        }
     }
 
     private func laidOutCameraView(
-        width: CGFloat = 393
+        width: CGFloat = CameraCaptureChromeLayout.iPhone16ProViewport.width,
+        height: CGFloat = CameraCaptureChromeLayout.iPhone16ProViewport.height
     ) -> SCSDKCameraKitReferenceUI.CameraView {
         let cameraView = SCSDKCameraKitReferenceUI.CameraView(
-            frame: CGRect(x: 0, y: 0, width: width, height: 852)
+            frame: CGRect(x: 0, y: 0, width: width, height: height)
         )
         cameraView.setNeedsLayout()
         cameraView.layoutIfNeeded()

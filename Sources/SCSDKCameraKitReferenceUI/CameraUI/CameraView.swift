@@ -78,7 +78,21 @@ open class CameraView: UIView {
         return stackView
     }()
 
+    private var cameraActionsTopConstraint: NSLayoutConstraint?
     private var cameraActionsTrailingConstraint: NSLayoutConstraint?
+    private var cameraActionsWidthConstraint: NSLayoutConstraint?
+    private var carouselTrailingConstraint: NSLayoutConstraint?
+    private var carouselTopConstraint: NSLayoutConstraint?
+    private var carouselBottomConstraint: NSLayoutConstraint?
+    private var carouselWidthConstraint: NSLayoutConstraint?
+    private var photoButtonWidthConstraint: NSLayoutConstraint?
+    private var photoButtonHeightConstraint: NSLayoutConstraint?
+    private var videoButtonWidthConstraint: NSLayoutConstraint?
+    private var videoButtonHeightConstraint: NSLayoutConstraint?
+    private var captureControlsTopConstraint: NSLayoutConstraint?
+    private var captureControlsHeightConstraint: NSLayoutConstraint?
+    private var attributionTopConstraint: NSLayoutConstraint?
+    private var attributionTrailingConstraint: NSLayoutConstraint?
 
     /// Control view for switching between flash and ring light as well as controlling ring light color and intensity.
     public lazy var flashControlView: FlashControlView = {
@@ -161,11 +175,11 @@ open class CameraView: UIView {
     public let photoCaptureButton: UIButton = {
         let button = UIButton(type: .custom)
         let image = UIImage(systemName: "camera.fill")?
-            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
+            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
         button.accessibilityLabel = "Take photo"
         button.backgroundColor = UIColor.black.withAlphaComponent(0.42)
         button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
-        button.layer.borderWidth = 3.0
+        button.layer.borderWidth = 2.0
         button.layer.cornerRadius = CameraCaptureChromeLayout.photoButtonDiameter / 2
         button.tintColor = .white
         button.setImage(image, for: .normal)
@@ -179,7 +193,7 @@ open class CameraView: UIView {
         button.accessibilityLabel = "Start recording"
         button.backgroundColor = UIColor(hex: 0xFF3447)
         button.layer.borderColor = UIColor.white.withAlphaComponent(0.9).cgColor
-        button.layer.borderWidth = 3.0
+        button.layer.borderWidth = 2.0
         button.layer.cornerRadius = CameraCaptureChromeLayout.videoButtonDiameter / 2
         button.tintColor = .white
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -251,7 +265,7 @@ open class CameraView: UIView {
     }
 
     override open func layoutSubviews() {
-        updateCameraActionsLayout()
+        updateChromeLayout()
         super.layoutSubviews()
         let previewFrame = resolvedPreviewFrame
         rawCameraPreviewView.frame = previewFrame
@@ -262,14 +276,48 @@ open class CameraView: UIView {
         )
     }
 
-    private func updateCameraActionsLayout() {
-        let safeAreaWidth = max(
-            safeAreaLayoutGuide.layoutFrame.width,
-            bounds.width - safeAreaInsets.left - safeAreaInsets.right
+    private func updateChromeLayout() {
+        let metrics = CameraCaptureChromeLayout.metrics(for: bounds.size)
+
+        cameraActionsTopConstraint?.constant = metrics.cameraActionsTopInset
+        cameraActionsTrailingConstraint?.constant = -metrics.cameraActionsTrailingInset
+        cameraActionsWidthConstraint?.constant = metrics.cameraActionsWidth
+
+        carouselTrailingConstraint?.constant = -metrics.carouselTrailingInset
+        carouselTopConstraint?.constant = metrics.carouselTopSpacing
+        carouselBottomConstraint?.constant = -metrics.carouselBottomSpacing
+        carouselWidthConstraint?.constant = metrics.carouselWidth
+
+        photoButtonWidthConstraint?.constant = metrics.photoButtonDiameter
+        photoButtonHeightConstraint?.constant = metrics.photoButtonDiameter
+        videoButtonWidthConstraint?.constant = metrics.videoButtonDiameter
+        videoButtonHeightConstraint?.constant = metrics.videoButtonDiameter
+        captureControlsTopConstraint?.constant = -metrics.captureControlsTopOffset
+        captureControlsHeightConstraint?.constant = metrics.captureControlsHeight
+        captureControlsView.spacing = metrics.captureControlSpacing
+
+        photoCaptureButton.layer.cornerRadius = metrics.photoButtonDiameter / 2
+        photoCaptureButton.layer.borderWidth = metrics.captureBorderWidth
+        photoCaptureButton.setImage(
+            UIImage(systemName: "camera.fill")?.withConfiguration(
+                UIImage.SymbolConfiguration(pointSize: metrics.photoSymbolSize, weight: .semibold)
+            ),
+            for: .normal
         )
-        cameraActionsTrailingConstraint?.constant = -CameraActionsView.adaptiveTrailingInset(
-            forAvailableWidth: safeAreaWidth
-        )
+        videoCaptureButton.layer.cornerRadius = metrics.videoButtonDiameter / 2
+        videoCaptureButton.layer.borderWidth = metrics.captureBorderWidth
+        if videoCaptureButton.image(for: .normal) != nil {
+            videoCaptureButton.setImage(
+                UIImage(systemName: "stop.fill")?.withConfiguration(
+                    UIImage.SymbolConfiguration(pointSize: metrics.recordingStopSymbolSize, weight: .bold)
+                ),
+                for: .normal
+            )
+        }
+
+        attributionTopConstraint?.constant = -metrics.attributionTopOffset
+        attributionTrailingConstraint?.constant = -metrics.attributionTrailingInset
+        snapAttributionView.apply(metrics: metrics)
     }
 }
 
@@ -370,15 +418,22 @@ extension CameraView {
 extension CameraView {
     private func setupCameraActionsView() {
         addSubview(cameraActionsView)
+        let topConstraint = cameraActionsView.topAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.topAnchor,
+            constant: 6
+        )
         let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
             equalTo: safeAreaLayoutGuide.trailingAnchor,
-            constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
+            constant: -8
         )
+        let widthConstraint = cameraActionsView.widthAnchor.constraint(equalToConstant: 40)
+        cameraActionsTopConstraint = topConstraint
         cameraActionsTrailingConstraint = trailingConstraint
+        cameraActionsWidthConstraint = widthConstraint
         NSLayoutConstraint.activate([
-            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 6.0),
+            topConstraint,
             trailingConstraint,
-            cameraActionsView.widthAnchor.constraint(equalToConstant: 40),
+            widthConstraint,
         ])
     }
 }
@@ -400,11 +455,28 @@ extension CameraView {
 extension CameraView {
     private func setupCarousel() {
         addSubview(carouselView)
+        let trailingConstraint = carouselView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -10
+        )
+        let topConstraint = carouselView.topAnchor.constraint(
+            equalTo: cameraActionsView.bottomAnchor,
+            constant: 12
+        )
+        let bottomConstraint = carouselView.bottomAnchor.constraint(
+            equalTo: cameraBottomBar.topAnchor,
+            constant: -96
+        )
+        let widthConstraint = carouselView.widthAnchor.constraint(equalToConstant: 62)
+        carouselTrailingConstraint = trailingConstraint
+        carouselTopConstraint = topConstraint
+        carouselBottomConstraint = bottomConstraint
+        carouselWidthConstraint = widthConstraint
         NSLayoutConstraint.activate([
-            carouselView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10.0),
-            carouselView.topAnchor.constraint(equalTo: cameraActionsView.bottomAnchor, constant: 12.0),
-            carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -96.0),
-            carouselView.widthAnchor.constraint(equalToConstant: 62.0),
+            trailingConstraint,
+            topConstraint,
+            bottomConstraint,
+            widthConstraint,
         ])
     }
 }
@@ -417,20 +489,30 @@ extension CameraView {
         captureControlsView.addArrangedSubview(videoCaptureButton)
         addSubview(captureControlsView)
 
+        let photoWidthConstraint = photoCaptureButton.widthAnchor.constraint(equalToConstant: 34)
+        let photoHeightConstraint = photoCaptureButton.heightAnchor.constraint(equalToConstant: 34)
+        let videoWidthConstraint = videoCaptureButton.widthAnchor.constraint(equalToConstant: 38)
+        let videoHeightConstraint = videoCaptureButton.heightAnchor.constraint(equalToConstant: 38)
+        let topConstraint = captureControlsView.topAnchor.constraint(
+            equalTo: cameraBottomBar.topAnchor,
+            constant: -70
+        )
+        let heightConstraint = captureControlsView.heightAnchor.constraint(equalToConstant: 42)
+        photoButtonWidthConstraint = photoWidthConstraint
+        photoButtonHeightConstraint = photoHeightConstraint
+        videoButtonWidthConstraint = videoWidthConstraint
+        videoButtonHeightConstraint = videoHeightConstraint
+        captureControlsTopConstraint = topConstraint
+        captureControlsHeightConstraint = heightConstraint
+
         NSLayoutConstraint.activate([
-            photoCaptureButton.widthAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.photoButtonDiameter),
-            photoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.photoButtonDiameter),
-            videoCaptureButton.widthAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
-            videoCaptureButton.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.videoButtonDiameter),
-            captureControlsView.centerXAnchor.constraint(
-                equalTo: centerXAnchor,
-                constant: CameraCaptureChromeLayout.captureControlsCenterOffset
-            ),
-            captureControlsView.bottomAnchor.constraint(
-                equalTo: bottomAnchor,
-                constant: -CameraCaptureChromeLayout.captureControlsBottomClearance
-            ),
-            captureControlsView.heightAnchor.constraint(equalToConstant: CameraCaptureChromeLayout.captureControlsHeight),
+            photoWidthConstraint,
+            photoHeightConstraint,
+            videoWidthConstraint,
+            videoHeightConstraint,
+            captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            topConstraint,
+            heightConstraint,
         ])
     }
 
@@ -438,7 +520,7 @@ extension CameraView {
         videoCaptureButton.accessibilityLabel = isRecording ? "Stop recording" : "Start recording"
         videoCaptureButton.backgroundColor = UIColor(hex: 0xFF3447).withAlphaComponent(isRecording ? 0.72 : 1.0)
         let image = isRecording
-            ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 16, weight: .bold))
+            ? UIImage(systemName: "stop.fill")?.withConfiguration(UIImage.SymbolConfiguration(pointSize: 12, weight: .bold))
             : nil
         videoCaptureButton.setImage(image, for: .normal)
     }
@@ -477,12 +559,8 @@ extension CameraView {
     private func setupMessageView() {
         addSubview(messageView)
         NSLayoutConstraint.activate([
-            messageView.topAnchor.constraint(
-                equalTo: safeAreaLayoutGuide.topAnchor,
-                constant: CameraCaptureChromeLayout.lensStatusTopClearance
-            ),
-            messageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            messageView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 16.0),
+            messageView.topAnchor.constraint(equalTo: lensLabel.bottomAnchor, constant: 8),
+            messageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             messageView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
         ])
     }
@@ -531,12 +609,19 @@ extension CameraView {
 extension CameraView {
     private func setupSnapAttributionView() {
         addSubview(snapAttributionView)
+        let topConstraint = snapAttributionView.topAnchor.constraint(
+            equalTo: cameraBottomBar.topAnchor,
+            constant: -118
+        )
+        let trailingConstraint = snapAttributionView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -16
+        )
+        attributionTopConstraint = topConstraint
+        attributionTrailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
-            snapAttributionView.bottomAnchor.constraint(
-                equalTo: bottomAnchor,
-                constant: -CameraCaptureChromeLayout.attributionBottomClearance
-            ),
-            trailingAnchor.constraint(equalToSystemSpacingAfter: snapAttributionView.trailingAnchor, multiplier: 2.0),
+            topConstraint,
+            trailingConstraint,
         ])
     }
 }
