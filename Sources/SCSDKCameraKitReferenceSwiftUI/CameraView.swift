@@ -522,7 +522,9 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         uiView.updateLensTitle(state.selectedLens?.name ?? state.selectedLens?.id)
     }
 
-    final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
+    final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate,
+        NoseAdjustmentsControlViewDelegate
+    {
         let state: CameraViewState
         let cameraController: CameraController
         weak var controlsView: InclusiveCameraControlsView?
@@ -561,6 +563,14 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 
         func adjustmentControlView(_ control: AdjustmentControlView, sliderValueChanged value: Double) {
             cameraController.adjustmentControlView(control, sliderValueChanged: value)
+        }
+
+        func noseAdjustmentsControlView(
+            _ control: NoseAdjustmentsControlView,
+            updated values: NoseAdjustmentValues,
+            done: Bool
+        ) {
+            cameraController.setNoseAdjustmentValues(values, reapply: done)
         }
     }
 }
@@ -603,6 +613,13 @@ private final class InclusiveCameraControlsView: UIView {
         return view
     }()
     let portraitControlDismissalHint = UILabel.controlDismissalHint()
+    let noseAdjustmentsControlView: NoseAdjustmentsControlView = {
+        let view = NoseAdjustmentsControlView()
+        view.accessibilityIdentifier = CameraElements.noseAdjustmentsControl.id
+        view.accessibilityLabel = "Nose Adjustments"
+        return view
+    }()
+    let noseAdjustmentsControlDismissalHint = UILabel.controlDismissalHint()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -635,6 +652,7 @@ private final class InclusiveCameraControlsView: UIView {
         flashControlView.delegate = coordinator
         toneMapControlView.delegate = coordinator
         portraitControlView.delegate = coordinator
+        noseAdjustmentsControlView.delegate = coordinator
 
         cameraActionsView.flashActionView.enableAction = { [weak cameraController] in
             cameraController?.enableFlash()
@@ -704,7 +722,16 @@ private final class InclusiveCameraControlsView: UIView {
         } else {
             retouchAction.collapse()
         }
-        cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        let noseAdjustmentsAction = cameraActionsView.rhinoplastyActionView
+        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        noseAdjustmentsControlView.values = cameraController.noseAdjustmentValues
+        if cameraController.isRhinoplastyEnabled, cameraController.isRhinoplastyAvailable {
+            noseAdjustmentsAction.expand()
+        } else {
+            noseAdjustmentsAction.collapse()
+            noseAdjustmentsControlView.isHidden = true
+            noseAdjustmentsControlDismissalHint.isHidden = true
+        }
         syncAdjustment(
             cameraActionsView.toneMapActionView,
             control: toneMapControlView,
@@ -757,6 +784,11 @@ private final class InclusiveCameraControlsView: UIView {
             portraitControlView.isHidden = true
             portraitControlDismissalHint.isHidden = true
         }
+        if !rhinoplasty {
+            cameraActionsView.rhinoplastyActionView.collapse()
+            noseAdjustmentsControlView.isHidden = true
+            noseAdjustmentsControlDismissalHint.isHidden = true
+        }
     }
 
     func updateFlashToggle(for position: AVCaptureDevice.Position) {
@@ -775,7 +807,8 @@ private final class InclusiveCameraControlsView: UIView {
     private func setup() {
         backgroundColor = .clear
         [cameraActionsView, lensLabel, flashControlView, flashControlDismissalHint, toneMapControlView,
-         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
+         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint,
+         noseAdjustmentsControlView, noseAdjustmentsControlDismissalHint].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             addSubview($0)
         }
@@ -821,6 +854,27 @@ private final class InclusiveCameraControlsView: UIView {
             portraitControlDismissalHint.leadingAnchor.constraint(equalTo: portraitControlView.leadingAnchor),
             portraitControlDismissalHint.trailingAnchor.constraint(equalTo: portraitControlView.trailingAnchor),
             portraitControlDismissalHint.topAnchor.constraint(equalTo: portraitControlView.bottomAnchor),
+
+            noseAdjustmentsControlView.trailingAnchor.constraint(
+                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.leadingAnchor,
+                constant: -8
+            ),
+            noseAdjustmentsControlView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor,
+                constant: 8
+            ),
+            noseAdjustmentsControlView.topAnchor.constraint(
+                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.bottomAnchor
+            ),
+            noseAdjustmentsControlDismissalHint.leadingAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.leadingAnchor
+            ),
+            noseAdjustmentsControlDismissalHint.trailingAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.trailingAnchor
+            ),
+            noseAdjustmentsControlDismissalHint.topAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.bottomAnchor
+            ),
         ])
     }
 
@@ -854,6 +908,16 @@ private final class InclusiveCameraControlsView: UIView {
         cameraActionsView.portraitActionView.toggleActionSettingsVisibility = { [weak self] in
             self?.toggle(control: self?.portraitControlView, hint: self?.portraitControlDismissalHint)
         }
+
+        cameraActionsView.rhinoplastyActionView.showActionSettings = { [weak self] in
+            self?.show(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
+        }
+        cameraActionsView.rhinoplastyActionView.hideActionSettings = { [weak self] in
+            self?.hide(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
+        }
+        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak self] in
+            self?.toggle(control: self?.noseAdjustmentsControlView, hint: self?.noseAdjustmentsControlDismissalHint)
+        }
     }
 
     private func show(control: UIView?, hint: UIView?) {
@@ -877,7 +941,8 @@ private final class InclusiveCameraControlsView: UIView {
 
     private func hideAllControls() {
         [flashControlView, flashControlDismissalHint, toneMapControlView,
-         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint].forEach {
+         toneMapControlDismissalHint, portraitControlView, portraitControlDismissalHint,
+         noseAdjustmentsControlView, noseAdjustmentsControlDismissalHint].forEach {
             $0.isHidden = true
         }
     }

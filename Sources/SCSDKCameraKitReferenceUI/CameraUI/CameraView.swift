@@ -79,6 +79,7 @@ open class CameraView: UIView {
     }()
 
     private var cameraActionsTrailingConstraint: NSLayoutConstraint?
+    private var carouselTrailingConstraint: NSLayoutConstraint?
 
     /// Control view for switching between flash and ring light as well as controlling ring light color and intensity.
     public lazy var flashControlView: FlashControlView = {
@@ -146,6 +147,24 @@ open class CameraView: UIView {
         label.isHidden = true
         label.translatesAutoresizingMaskIntoConstraints = false
 
+        return label
+    }()
+
+    /// Control view for the values authored by the persistent Nose Adjustments Lens.
+    public let noseAdjustmentsControlView: NoseAdjustmentsControlView = {
+        let view = NoseAdjustmentsControlView()
+        view.accessibilityIdentifier = CameraElements.noseAdjustmentsControl.id
+        view.accessibilityLabel = "Nose Adjustments"
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    /// Label shown beneath the Nose Adjustments control with its dismissal hint.
+    public let noseAdjustmentsControlDismissalHintLabel: UILabel = {
+        let label = UILabel.controlDismissalHint()
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
 
@@ -270,6 +289,9 @@ open class CameraView: UIView {
         cameraActionsTrailingConstraint?.constant = -CameraActionsView.adaptiveTrailingInset(
             forAvailableWidth: safeAreaWidth
         )
+        carouselTrailingConstraint?.constant = -CameraCaptureChromeLayout.trailingClearance(
+            for: safeAreaWidth
+        )
     }
 }
 
@@ -284,6 +306,7 @@ extension CameraView {
         setupFlashButtons()
         setupToneMapButtons()
         setupPortraitButtons()
+        setupNoseAdjustmentsButtons()
         setupHintLabel()
         setupLensLabel()
         setupCarousel()
@@ -299,6 +322,8 @@ extension CameraView {
         setupToneMapControlDismissalHintLabel()
         setupPortraitControlView()
         setupPortraitControlDismissalLabel()
+        setupNoseAdjustmentsControlView()
+        setupNoseAdjustmentsControlDismissalLabel()
     }
 
     private func setupPreview() {
@@ -400,8 +425,13 @@ extension CameraView {
 extension CameraView {
     private func setupCarousel() {
         addSubview(carouselView)
+        let trailingConstraint = carouselView.trailingAnchor.constraint(
+            equalTo: safeAreaLayoutGuide.trailingAnchor,
+            constant: -CameraCaptureChromeLayout.trailingClearance(for: bounds.width)
+        )
+        carouselTrailingConstraint = trailingConstraint
         NSLayoutConstraint.activate([
-            carouselView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -10.0),
+            trailingConstraint,
             carouselView.topAnchor.constraint(equalTo: cameraActionsView.bottomAnchor, constant: 12.0),
             carouselView.bottomAnchor.constraint(equalTo: cameraBottomBar.topAnchor, constant: -96.0),
             carouselView.widthAnchor.constraint(equalToConstant: 62.0),
@@ -693,6 +723,64 @@ extension CameraView {
     }
 }
 
+// MARK: Nose Adjustments
+
+extension CameraView {
+    private func setupNoseAdjustmentsControlView() {
+        addSubview(noseAdjustmentsControlView)
+        NSLayoutConstraint.activate([
+            noseAdjustmentsControlView.trailingAnchor.constraint(
+                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.leadingAnchor,
+                constant: -8
+            ),
+            noseAdjustmentsControlView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor,
+                constant: 8
+            ),
+            noseAdjustmentsControlView.topAnchor.constraint(
+                equalTo: cameraActionsView.rhinoplastyActionView.toggleButton.bottomAnchor
+            ),
+        ])
+    }
+
+    private func setupNoseAdjustmentsControlDismissalLabel() {
+        addSubview(noseAdjustmentsControlDismissalHintLabel)
+        NSLayoutConstraint.activate([
+            noseAdjustmentsControlDismissalHintLabel.leadingAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.leadingAnchor
+            ),
+            noseAdjustmentsControlDismissalHintLabel.trailingAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.trailingAnchor
+            ),
+            noseAdjustmentsControlDismissalHintLabel.topAnchor.constraint(
+                equalTo: noseAdjustmentsControlView.bottomAnchor
+            ),
+        ])
+    }
+
+    private func setupNoseAdjustmentsButtons() {
+        cameraActionsView.rhinoplastyActionView.showActionSettings = { [weak self] in
+            self?.hideAllControls()
+            self?.noseAdjustmentsControlView.isHidden = false
+            self?.noseAdjustmentsControlDismissalHintLabel.isHidden = false
+        }
+
+        cameraActionsView.rhinoplastyActionView.hideActionSettings = { [weak self] in
+            self?.noseAdjustmentsControlView.isHidden = true
+            self?.noseAdjustmentsControlDismissalHintLabel.isHidden = true
+        }
+
+        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak self] in
+            guard let self else { return }
+            if self.noseAdjustmentsControlView.isHidden {
+                self.hideAllControls()
+            }
+            self.noseAdjustmentsControlView.isHidden.toggle()
+            self.noseAdjustmentsControlDismissalHintLabel.isHidden.toggle()
+        }
+    }
+}
+
 // MARK: Camera Actions Control Helper
 
 public extension CameraView {
@@ -704,6 +792,8 @@ public extension CameraView {
             toneMapControlDismissalHintLabel,
             portraitControlView,
             portraitControlDismissalHintLabel,
+            noseAdjustmentsControlView,
+            noseAdjustmentsControlDismissalHintLabel,
         ].allSatisfy(\.isHidden)
     }
 
@@ -715,6 +805,8 @@ public extension CameraView {
             toneMapControlDismissalHintLabel,
             portraitControlView,
             portraitControlDismissalHintLabel,
+            noseAdjustmentsControlView,
+            noseAdjustmentsControlDismissalHintLabel,
         ] {
             view.isHidden = true
         }

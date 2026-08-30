@@ -152,7 +152,7 @@ public class CameraActionsView: UIView {
     /// Button to enable or disable the host-provided persistent Nose Adjustments Lens layer.
     public lazy var rhinoplastyActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
-        view.configurable = false
+        view.configurable = true
         view.toggleButton.accessibilityIdentifier = CameraElements.rhinoplastyToggleButton.id
         view.toggleButton.accessibilityLabel = "Nose Adjustments"
         view.toggleButton.tintColor = .white
@@ -163,6 +163,16 @@ public class CameraActionsView: UIView {
             view.toggleButton.setImage(image, for: .normal)
             view.toggleButton.setImage(image.circleHighlightedImage(radius: 20, color: .white), for: .selected)
         }
+        view.configurationButton.accessibilityIdentifier = CameraElements.rhinoplastyConfigurationButton.id
+        view.configurationButton.accessibilityLabel = "Nose Adjustment Settings"
+        view.configurationButton.tintColor = .white
+        view.configurationButton.setImage(
+            UIImage(
+                systemName: "slider.horizontal.3",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+            ),
+            for: .normal
+        )
         return view
     }()
 

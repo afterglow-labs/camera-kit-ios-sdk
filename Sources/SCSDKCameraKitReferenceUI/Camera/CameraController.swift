@@ -87,7 +87,7 @@ public enum BackCameraDeviceMode: String, CaseIterable, Sendable {
 
 /// A controller which manages the camera and lenses stack on behalf of its owner
 open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetcherObserver, LensHintDelegate,
-    MediaPickerViewDelegate, AdjustmentControlViewDelegate
+    MediaPickerViewDelegate, AdjustmentControlViewDelegate, NoseAdjustmentsControlViewDelegate
 {
     // MARK: - Public API
 
@@ -222,6 +222,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// Whether the dedicated Rhinoplasty layer is requested for this camera session.
     public var isRhinoplastyEnabled: Bool {
         readLensState { rhinoplastyRequestedEnabled }
+    }
+
+    /// Values passed to the dedicated Nose Adjustments Lens the next time it is applied.
+    public var noseAdjustmentValues: NoseAdjustmentValues {
+        readLensState { configuredNoseAdjustmentValues }
     }
 
     /// Confirmed active Lenses in Camera Kit application order: permanent controls, pinned base, then top.
@@ -1109,6 +1114,31 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         setPermanentLensEnabled(enabled, control: .rhinoplasty, completion: completion)
     }
 
+    /// Updates the controls authored by the Nose Adjustments Lens.
+    ///
+    /// Set `reapply` to false while a slider is moving, then true when interaction finishes. This keeps
+    /// Camera Kit from rebuilding the Lens stack for every intermediate slider value.
+    public func setNoseAdjustmentValues(
+        _ values: NoseAdjustmentValues,
+        reapply: Bool = true,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else {
+                completion?(false)
+                return
+            }
+            self.configuredNoseAdjustmentValues = values
+            self.notifyControlsDidChange()
+
+            guard reapply, self.rhinoplastyRequestedEnabled else {
+                completion?(true)
+                return
+            }
+            self.applyDesiredLensStackIfProcessorAvailable(completion: completion)
+        }
+    }
+
     /// Apply a specified lens.
     /// - Parameters:
     ///   - lens: selected lens
@@ -1485,6 +1515,14 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         }
     }
 
+    public func noseAdjustmentsControlView(
+        _ control: NoseAdjustmentsControlView,
+        updated values: NoseAdjustmentValues,
+        done: Bool
+    ) {
+        setNoseAdjustmentValues(values, reapply: done)
+    }
+
     // MARK: - Private API
 
     // MARK: Private vars
@@ -1520,6 +1558,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var retouchRequestedEnabled = false
     private var configuredRhinoplastyLens: Lens?
     private var rhinoplastyRequestedEnabled = false
+    private var configuredNoseAdjustmentValues = NoseAdjustmentValues.original
 
     private enum PermanentLensControl {
         case retouch
@@ -1974,7 +2013,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func compositeLaunchData(for lens: Lens) -> Any {
-        guard !lens.vendorData.isEmpty || !lensLaunchDataOverrides.isEmpty else {
+        guard
+            !lens.vendorData.isEmpty
+                || !lensLaunchDataOverrides.isEmpty
+                || !noseAdjustmentLaunchData(for: lens).isEmpty
+        else {
             return NSNull()
         }
         return launchData(for: lens)
@@ -2234,7 +2277,12 @@ extension CameraController {
     /// - Parameter lens: the lens to generate launch data for
     /// - Returns: launch data.
     private func launchData(for lens: Lens) -> LensLaunchData {
-        guard !lens.vendorData.isEmpty || !lensLaunchDataOverrides.isEmpty else {
+        let noseAdjustmentLaunchData = noseAdjustmentLaunchData(for: lens)
+        guard
+            !lens.vendorData.isEmpty
+                || !lensLaunchDataOverrides.isEmpty
+                || !noseAdjustmentLaunchData.isEmpty
+        else {
             return EmptyLensLaunchData()
         }
 
@@ -2245,7 +2293,20 @@ extension CameraController {
         for (key, val) in lensLaunchDataOverrides {
             launchDataBuilder.add(string: val, key: key)
         }
+        for (key, val) in noseAdjustmentLaunchData {
+            launchDataBuilder.add(string: val, key: key)
+        }
         return launchDataBuilder.launchData ?? EmptyLensLaunchData()
+    }
+
+    private func noseAdjustmentLaunchData(for lens: Lens) -> [String: String] {
+        guard configuredRhinoplastyLens.map({ lensesMatch($0, lens) }) == true else { return [:] }
+        return [
+            "afterglow_nose_native_controls": "true",
+            "afterglow_nose_width": String(configuredNoseAdjustmentValues.width),
+            "afterglow_nose_height": String(configuredNoseAdjustmentValues.height),
+            "afterglow_nose_gap": String(configuredNoseAdjustmentValues.gap),
+        ]
     }
 }
 

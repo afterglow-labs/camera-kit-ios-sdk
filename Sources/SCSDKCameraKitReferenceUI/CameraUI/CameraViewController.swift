@@ -264,8 +264,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
         cameraView.cameraActionsView.highDefinitionActionView.toggleButton.isSelected =
             controller.isHighDefinitionModeEnabled
         syncRetouchAction(with: controller)
-        cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !controller.isRhinoplastyAvailable
-        cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = controller.isRhinoplastyEnabled
+        syncNoseAdjustmentsAction(with: controller)
         syncAdjustment(
             cameraView.cameraActionsView.toneMapActionView,
             control: cameraView.toneMapControlView,
@@ -446,6 +445,7 @@ private extension CameraViewController {
 
         cameraView.toneMapControlView.delegate = cameraController
         cameraView.portraitControlView.delegate = cameraController
+        cameraView.noseAdjustmentsControlView.delegate = cameraController
 
         cameraView.flashControlView.delegate = self
     }
@@ -488,13 +488,27 @@ extension CameraViewController {
 extension CameraViewController {
     private func setupRhinoplastyButton() {
         let action = cameraView.cameraActionsView.rhinoplastyActionView
-        action.isHidden = !cameraController.isRhinoplastyAvailable
-        action.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
         action.enableAction = { [weak cameraController] in
             cameraController?.setRhinoplastyEnabled(true)
         }
         action.disableAction = { [weak cameraController] in
             cameraController?.setRhinoplastyEnabled(false)
+        }
+        syncNoseAdjustmentsAction(with: cameraController)
+    }
+
+    private func syncNoseAdjustmentsAction(with controller: CameraController) {
+        let action = cameraView.cameraActionsView.rhinoplastyActionView
+        action.isHidden = !controller.isRhinoplastyAvailable
+        action.toggleButton.isSelected = controller.isRhinoplastyEnabled
+        cameraView.noseAdjustmentsControlView.values = controller.noseAdjustmentValues
+
+        if controller.isRhinoplastyEnabled, action.configurable {
+            action.expand()
+        } else {
+            action.collapse()
+            cameraView.noseAdjustmentsControlView.isHidden = true
+            cameraView.noseAdjustmentsControlDismissalHintLabel.isHidden = true
         }
     }
 }
@@ -618,6 +632,10 @@ extension CameraViewController: AdjustmentsProcessorObserver {
             !cameraController.supportsHighDefinitionLensRendering
         cameraView.cameraActionsView.retouchActionView.isHidden = !cameraController.isRetouchAvailable
         cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !cameraController.isRhinoplastyAvailable
+        if !cameraController.isRhinoplastyAvailable {
+            cameraView.noseAdjustmentsControlView.isHidden = true
+            cameraView.noseAdjustmentsControlDismissalHintLabel.isHidden = true
+        }
     }
 }
 
