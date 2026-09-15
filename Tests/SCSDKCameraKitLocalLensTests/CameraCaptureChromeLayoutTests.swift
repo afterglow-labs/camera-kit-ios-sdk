@@ -48,6 +48,13 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         )
     }
 
+    func testNoseAdjustmentsControlProvidesAnEditSubButton() {
+        let action = laidOutCameraView().cameraActionsView.rhinoplastyActionView
+
+        XCTAssertTrue(action.configurable)
+        XCTAssertEqual(action.configurationButton.accessibilityLabel, "Edit Nose")
+    }
+
     func testUIKitRestoresTheBaselineCaptureGroup() {
         let cameraView = laidOutCameraView()
         let photoFrame = cameraView.photoCaptureButton.convert(

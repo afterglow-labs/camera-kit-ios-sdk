@@ -687,10 +687,14 @@ private final class InclusiveCameraControlsView: UIView {
         }
 
         cameraActionsView.rhinoplastyActionView.enableAction = { [weak cameraController] in
+            cameraController?.showNoseAdjustmentControls(reapply: false)
             cameraController?.setRhinoplastyEnabled(true)
         }
         cameraActionsView.rhinoplastyActionView.disableAction = { [weak cameraController] in
             cameraController?.setRhinoplastyEnabled(false)
+        }
+        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak cameraController] in
+            cameraController?.showNoseAdjustmentControls()
         }
 
         configureControlVisibilityCallbacks()
@@ -717,7 +721,13 @@ private final class InclusiveCameraControlsView: UIView {
         } else {
             retouchAction.collapse()
         }
-        cameraActionsView.rhinoplastyActionView.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        let noseAdjustmentsAction = cameraActionsView.rhinoplastyActionView
+        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
+        if cameraController.isRhinoplastyEnabled, noseAdjustmentsAction.configurable {
+            noseAdjustmentsAction.expand()
+        } else {
+            noseAdjustmentsAction.collapse()
+        }
         syncAdjustment(
             cameraActionsView.toneMapActionView,
             control: toneMapControlView,

@@ -395,6 +395,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         configuredExternalInput = externalInput.map(ExternalInputCompatibilityAdapter.init(source:))
         self.cameraPosition = cameraPosition
         super.init()
+        lensLaunchDataOverrides["afterglow_nose_session_id"] = noseAdjustmentsControlSessionID
         cameraKit.cameraPosition = cameraPosition
         lensQueue.setSpecific(key: lensQueueKey, value: ())
     }
@@ -1109,6 +1110,25 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         setPermanentLensEnabled(enabled, control: .rhinoplasty, completion: completion)
     }
 
+    /// Asks the Nose Adjustments Lens to display its own control drawer.
+    ///
+    /// Camera Kit delivers launch data when a Lens is applied, so reopening the drawer reapplies
+    /// the current composite stack. The Lens persists its adjustment values across that reapply.
+    public func showNoseAdjustmentControls(reapply: Bool = true) {
+        lensQueue.async { [weak self] in
+            guard let self, !self.lensOperationsStopped else { return }
+
+            self.noseAdjustmentsControlCommandSequence &+= 1
+            self.lensLaunchDataOverrides["afterglow_nose_session_id"] = self.noseAdjustmentsControlSessionID
+            self.lensLaunchDataOverrides["afterglow_nose_controls_command"] = "show"
+            self.lensLaunchDataOverrides["afterglow_nose_controls_command_id"] =
+                String(self.noseAdjustmentsControlCommandSequence)
+
+            guard reapply, !self.desiredLensStack.applied.isEmpty else { return }
+            self.enqueueLensOperationOnQueue(.apply(stack: self.desiredLensStack, completion: nil))
+        }
+    }
+
     /// Apply a specified lens.
     /// - Parameters:
     ///   - lens: selected lens
@@ -1326,6 +1346,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     /// that maps `afterglow_lighting` or `afterglow_shadows` to an orthographic camera or light.
     public func setLensLaunchDataOverrides(_ overrides: [String: String], reapplyCurrentLens: Bool = false) {
         lensLaunchDataOverrides = overrides
+        lensLaunchDataOverrides["afterglow_nose_session_id"] = noseAdjustmentsControlSessionID
         if reapplyCurrentLens {
             reapplyCurrentLenses()
         }
@@ -1497,6 +1518,10 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
 
     /// App-provided launch data merged into the selected lens's vendor data.
     private var lensLaunchDataOverrides: [String: String] = [:]
+
+    /// A per-camera-session namespace keeps Nose Adjustments values stable during Lens reapplies.
+    private let noseAdjustmentsControlSessionID = UUID().uuidString
+    private var noseAdjustmentsControlCommandSequence: UInt = 0
 
     /// Temporary state that holds the starting point for the last zoom level
     /// Since pinching is a relative operation, we need to keep whatever it was left at last to compare.
