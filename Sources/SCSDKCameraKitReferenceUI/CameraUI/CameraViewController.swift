@@ -433,7 +433,7 @@ private extension CameraViewController {
         setupToneMapAdjustmentButtons()
         setupPortraitAdjustmentButtons()
         setupRetouchButton()
-        setupRhinoplastyButton()
+        setupNoseAdjustmentsButton()
         setupHighDefinitionRenderingButton()
 
         cameraView.carouselView.delegate = self
@@ -482,17 +482,17 @@ extension CameraViewController {
     }
 }
 
-// MARK: Persistent Rhinoplasty Lens
+// MARK: Persistent Nose Adjustments Lens
 
 extension CameraViewController {
-    private func setupRhinoplastyButton() {
-        let action = cameraView.cameraActionsView.rhinoplastyActionView
+    private func setupNoseAdjustmentsButton() {
+        let action = cameraView.cameraActionsView.noseAdjustmentsActionView
         action.enableAction = { [weak cameraController] in
             cameraController?.showNoseAdjustmentControls(reapply: false)
-            cameraController?.setRhinoplastyEnabled(true)
+            cameraController?.setNoseAdjustmentsEnabled(true)
         }
         action.disableAction = { [weak cameraController] in
-            cameraController?.setRhinoplastyEnabled(false)
+            cameraController?.setNoseAdjustmentsEnabled(false)
         }
         action.toggleActionSettingsVisibility = { [weak cameraController] in
             cameraController?.showNoseAdjustmentControls()
@@ -501,10 +501,10 @@ extension CameraViewController {
     }
 
     private func syncNoseAdjustmentsAction(with controller: CameraController) {
-        let action = cameraView.cameraActionsView.rhinoplastyActionView
-        action.isHidden = !controller.isRhinoplastyAvailable
-        action.toggleButton.isSelected = controller.isRhinoplastyEnabled
-        if controller.isRhinoplastyEnabled, action.configurable {
+        let action = cameraView.cameraActionsView.noseAdjustmentsActionView
+        action.isHidden = !controller.isNoseAdjustmentsAvailable
+        action.toggleButton.isSelected = controller.isNoseAdjustmentsEnabled
+        if controller.isNoseAdjustmentsEnabled, action.configurable {
             action.expand()
         } else {
             action.collapse()
@@ -630,7 +630,7 @@ extension CameraViewController: AdjustmentsProcessorObserver {
         cameraView.cameraActionsView.highDefinitionActionView.isHidden =
             !cameraController.supportsHighDefinitionLensRendering
         cameraView.cameraActionsView.retouchActionView.isHidden = !cameraController.isRetouchAvailable
-        cameraView.cameraActionsView.rhinoplastyActionView.isHidden = !cameraController.isRhinoplastyAvailable
+        cameraView.cameraActionsView.noseAdjustmentsActionView.isHidden = !cameraController.isNoseAdjustmentsAvailable
     }
 }
 

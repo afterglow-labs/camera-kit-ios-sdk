@@ -153,10 +153,10 @@ public class CameraActionsView: UIView {
     }()
 
     /// Button to enable or disable the host-provided persistent Nose Adjustments Lens layer.
-    public lazy var rhinoplastyActionView: CameraConfigurableActionView = {
+    public lazy var noseAdjustmentsActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
         view.configurable = true
-        view.toggleButton.accessibilityIdentifier = CameraElements.rhinoplastyToggleButton.id
+        view.toggleButton.accessibilityIdentifier = CameraElements.noseAdjustmentsToggleButton.id
         view.toggleButton.accessibilityLabel = "Nose Adjustments"
         view.toggleButton.tintColor = .white
         if let image = UIImage(
@@ -196,7 +196,7 @@ public class CameraActionsView: UIView {
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
             flipCameraButton, flashActionView, toneMapActionView, portraitActionView, retouchActionView,
-            rhinoplastyActionView, highDefinitionActionView,
+            noseAdjustmentsActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -204,7 +204,7 @@ public class CameraActionsView: UIView {
         stackView.setCustomSpacing(6, after: toneMapActionView)
         stackView.setCustomSpacing(6, after: portraitActionView)
         stackView.setCustomSpacing(6, after: retouchActionView)
-        stackView.setCustomSpacing(6, after: rhinoplastyActionView)
+        stackView.setCustomSpacing(6, after: noseAdjustmentsActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         return stackView
@@ -265,7 +265,7 @@ public class CameraActionsView: UIView {
         buttonStackView.setCustomSpacing(6 * scale, after: toneMapActionView)
         buttonStackView.setCustomSpacing(6 * scale, after: portraitActionView)
         buttonStackView.setCustomSpacing(6 * scale, after: retouchActionView)
-        buttonStackView.setCustomSpacing(6 * scale, after: rhinoplastyActionView)
+        buttonStackView.setCustomSpacing(6 * scale, after: noseAdjustmentsActionView)
         flipCameraHeightConstraint?.constant = 40 * scale
         flipCameraButton.imageView?.transform = CGAffineTransform(scaleX: scale, y: scale)
         for actionView in [
@@ -273,7 +273,7 @@ public class CameraActionsView: UIView {
             toneMapActionView,
             portraitActionView,
             retouchActionView,
-            rhinoplastyActionView,
+            noseAdjustmentsActionView,
             highDefinitionActionView,
         ] {
             actionView.apply(scale: scale)

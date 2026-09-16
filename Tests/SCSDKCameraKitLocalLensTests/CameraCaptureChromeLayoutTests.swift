@@ -43,13 +43,13 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         let cameraView = laidOutCameraView()
 
         XCTAssertEqual(
-            cameraView.cameraActionsView.rhinoplastyActionView.toggleButton.accessibilityLabel,
+            cameraView.cameraActionsView.noseAdjustmentsActionView.toggleButton.accessibilityLabel,
             "Nose Adjustments"
         )
     }
 
     func testNoseAdjustmentsControlProvidesAnEditSubButton() {
-        let action = laidOutCameraView().cameraActionsView.rhinoplastyActionView
+        let action = laidOutCameraView().cameraActionsView.noseAdjustmentsActionView
 
         XCTAssertTrue(action.configurable)
         XCTAssertEqual(action.configurationButton.accessibilityLabel, "Edit Nose")

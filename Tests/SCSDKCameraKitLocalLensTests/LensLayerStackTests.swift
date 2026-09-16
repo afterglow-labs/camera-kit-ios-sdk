@@ -5,19 +5,19 @@ final class LensLayerStackTests: XCTestCase {
     func testPersistentControlsStackWithPinnedBaseAndSelectedTop() {
         var stack = LensLayerStack<String>()
 
-        stack.setPersistentBases(["retouch", "rhinoplasty"])
+        stack.setPersistentBases(["retouch", "noseAdjustments"])
         stack.select("face-sculpt", matches: ==)
         XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)
 
-        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty", "face-sculpt", "comic"])
+        XCTAssertEqual(stack.applied, ["retouch", "noseAdjustments", "face-sculpt", "comic"])
         XCTAssertEqual(stack.current, "comic")
 
         stack.clearTop()
-        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty", "face-sculpt"])
+        XCTAssertEqual(stack.applied, ["retouch", "noseAdjustments", "face-sculpt"])
 
         stack.unpin()
-        XCTAssertEqual(stack.applied, ["retouch", "rhinoplasty"])
+        XCTAssertEqual(stack.applied, ["retouch", "noseAdjustments"])
         XCTAssertNil(stack.current)
     }
 
@@ -117,7 +117,7 @@ final class LensLayerStackTests: XCTestCase {
     func testResetClearsEveryLayer() {
         var stack = LensLayerStack<String>()
 
-        stack.setPersistentBases(["persistent-retouch", "persistent-rhinoplasty"])
+        stack.setPersistentBases(["persistent-retouch", "persistent-noseAdjustments"])
         stack.select("retouch", matches: ==)
         XCTAssertTrue(stack.pinCurrent())
         stack.select("comic", matches: ==)

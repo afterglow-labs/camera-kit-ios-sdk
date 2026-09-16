@@ -86,9 +86,9 @@ public class CameraViewState: NSObject, ObservableObject {
     @Published var retouchAvailable = false
     @Published var retouchEnabled = false
 
-    /// Whether the host supplied a dedicated Rhinoplasty Lens and whether it is requested.
-    @Published var rhinoplastyAvailable = false
-    @Published var rhinoplastyEnabled = false
+    /// Whether the host supplied a dedicated Nose Adjustments Lens and whether it is requested.
+    @Published var noseAdjustmentsAvailable = false
+    @Published var noseAdjustmentsEnabled = false
 
     /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
     @Published var chromeHidden = false
@@ -236,8 +236,8 @@ extension CameraViewState: CameraControllerUIDelegate {
         highDefinitionRenderingEnabled = controller.isHighDefinitionModeEnabled
         retouchAvailable = controller.isRetouchAvailable
         retouchEnabled = controller.isRetouchEnabled
-        rhinoplastyAvailable = controller.isRhinoplastyAvailable
-        rhinoplastyEnabled = controller.isRhinoplastyEnabled
+        noseAdjustmentsAvailable = controller.isNoseAdjustmentsAvailable
+        noseAdjustmentsEnabled = controller.isNoseAdjustmentsEnabled
     }
 
     public func cameraControllerRequestedFlashControlHide(_ controller: CameraController) {

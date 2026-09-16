@@ -521,7 +521,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
             retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
-            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
+            noseAdjustments: state.noseAdjustmentsAvailable || cameraController.isNoseAdjustmentsAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         return view
@@ -533,7 +533,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
             retouch: state.retouchAvailable || cameraController.isRetouchAvailable,
-            rhinoplasty: state.rhinoplastyAvailable || cameraController.isRhinoplastyAvailable,
+            noseAdjustments: state.noseAdjustmentsAvailable || cameraController.isNoseAdjustmentsAvailable,
             highDefinition: cameraController.supportsHighDefinitionLensRendering
         )
         uiView.updateFlashToggle(for: cameraController.cameraPosition)
@@ -686,14 +686,14 @@ private final class InclusiveCameraControlsView: UIView {
             cameraController?.setRetouchEnabled(false)
         }
 
-        cameraActionsView.rhinoplastyActionView.enableAction = { [weak cameraController] in
+        cameraActionsView.noseAdjustmentsActionView.enableAction = { [weak cameraController] in
             cameraController?.showNoseAdjustmentControls(reapply: false)
-            cameraController?.setRhinoplastyEnabled(true)
+            cameraController?.setNoseAdjustmentsEnabled(true)
         }
-        cameraActionsView.rhinoplastyActionView.disableAction = { [weak cameraController] in
-            cameraController?.setRhinoplastyEnabled(false)
+        cameraActionsView.noseAdjustmentsActionView.disableAction = { [weak cameraController] in
+            cameraController?.setNoseAdjustmentsEnabled(false)
         }
-        cameraActionsView.rhinoplastyActionView.toggleActionSettingsVisibility = { [weak cameraController] in
+        cameraActionsView.noseAdjustmentsActionView.toggleActionSettingsVisibility = { [weak cameraController] in
             cameraController?.showNoseAdjustmentControls()
         }
 
@@ -721,9 +721,9 @@ private final class InclusiveCameraControlsView: UIView {
         } else {
             retouchAction.collapse()
         }
-        let noseAdjustmentsAction = cameraActionsView.rhinoplastyActionView
-        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isRhinoplastyEnabled
-        if cameraController.isRhinoplastyEnabled, noseAdjustmentsAction.configurable {
+        let noseAdjustmentsAction = cameraActionsView.noseAdjustmentsActionView
+        noseAdjustmentsAction.toggleButton.isSelected = cameraController.isNoseAdjustmentsEnabled
+        if cameraController.isNoseAdjustmentsEnabled, noseAdjustmentsAction.configurable {
             noseAdjustmentsAction.expand()
         } else {
             noseAdjustmentsAction.collapse()
@@ -759,13 +759,13 @@ private final class InclusiveCameraControlsView: UIView {
         tone: Bool,
         portrait: Bool,
         retouch: Bool,
-        rhinoplasty: Bool,
+        noseAdjustments: Bool,
         highDefinition: Bool
     ) {
         cameraActionsView.toneMapActionView.isHidden = !tone
         cameraActionsView.portraitActionView.isHidden = !portrait
         cameraActionsView.retouchActionView.isHidden = !retouch
-        cameraActionsView.rhinoplastyActionView.isHidden = !rhinoplasty
+        cameraActionsView.noseAdjustmentsActionView.isHidden = !noseAdjustments
         cameraActionsView.highDefinitionActionView.isHidden = !highDefinition
         if !tone {
             toneMapControlView.isHidden = true
