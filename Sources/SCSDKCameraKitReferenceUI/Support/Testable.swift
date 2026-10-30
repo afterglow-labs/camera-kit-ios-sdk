@@ -41,6 +41,9 @@ public enum CameraElements: String, TestableElement {
     case portraitControlDismissalHint
     case retouchToggleButton
     case noseAdjustmentsToggleButton
+    case lensSlotOneToggleButton
+    case lensSlotTwoToggleButton
+    case lensAudioToggleButton
     case highDefinitionToggleButton
     case ringLightView
     case photoLibraryButton

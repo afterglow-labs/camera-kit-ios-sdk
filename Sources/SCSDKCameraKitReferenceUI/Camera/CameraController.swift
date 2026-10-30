@@ -224,6 +224,31 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         readLensState { noseAdjustmentsRequestedEnabled }
     }
 
+    /// Whether Lenses are kept from playing sound such as music or effects. The microphone is unaffected.
+    public private(set) var isLensAudioMuted = false
+
+    /// Mutes or unmutes sound from every Lens. Camera Kit has no per-Lens mute.
+    public func setLensAudioMuted(_ muted: Bool) {
+        isLensAudioMuted = muted
+        cameraKit.lenses.processor?.setAudioMuted(muted, completion: nil)
+        notifyControlsDidChange()
+    }
+
+    /// The customizable Lens buttons, numbered from 0.
+    public static let lensButtonIndices = 0..<2
+
+    /// Whether the host app has assigned a Lens to customizable Lens button `index`.
+    public func isLensButtonAvailable(at index: Int) -> Bool {
+        guard Self.lensButtonIndices.contains(index) else { return false }
+        return readLensState { configuredLensButtonLenses[index] != nil }
+    }
+
+    /// Whether customizable Lens button `index`'s layer is requested for this camera session.
+    public func isLensButtonEnabled(at index: Int) -> Bool {
+        guard Self.lensButtonIndices.contains(index) else { return false }
+        return readLensState { lensButtonRequestedEnabled[index] }
+    }
+
     /// Confirmed active Lenses in Camera Kit application order: permanent controls, pinned base, then top.
     public var appliedLenses: [Lens] {
         readLensState { activeLensStack.applied }
@@ -489,6 +514,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     self.retouchRequestedEnabled = false
                     self.configuredNoseAdjustmentsLens = nil
                     self.noseAdjustmentsRequestedEnabled = false
+                    self.configuredLensButtonLenses = self.configuredLensButtonLenses.map { _ in nil }
+                    self.lensButtonRequestedEnabled = self.lensButtonRequestedEnabled.map { _ in false }
                     DispatchQueue.main.async {
                         self.uiDelegate?.cameraControllerLensStackDidChange(self)
                         self.uiDelegate = nil
@@ -556,6 +583,8 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             agreementsPresentationContextProvider: agreementsPresentationContextProvider
         )
         cameraKitStarted = true
+        // The Lens processor is created by start; carry the mute setting over to it.
+        cameraKit.lenses.processor?.setAudioMuted(isLensAudioMuted, completion: nil)
 
         // Start the capture session. It's important you start the capture session after starting the CameraKit session
         // because the CameraKit input and session configures the capture session implicitly and you may run into a
@@ -760,6 +789,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                     textInputContextProvider: self.configuredTextInputContextProvider,
                     agreementsPresentationContextProvider: self.configuredAgreementsPresentationContextProvider
                 )
+                self.cameraKit.lenses.processor?.setAudioMuted(self.isLensAudioMuted, completion: nil)
                 input.startRunning()
 
                 if shouldReapplyLenses {
@@ -1110,6 +1140,26 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         setPermanentLensEnabled(enabled, control: .noseAdjustments, completion: completion)
     }
 
+    /// Assigns the Lens for customizable Lens button `index`; nil leaves the button empty. The Lens
+    /// becomes a permanent layer under the pinned and selected Lenses, like Retouch, but unlike the
+    /// dedicated controls it stays in the carousel.
+    public func configureLensButtonLens(_ lens: Lens?, at index: Int, completion: ((Bool) -> Void)? = nil) {
+        guard Self.lensButtonIndices.contains(index) else {
+            completion?(false)
+            return
+        }
+        configurePermanentLens(lens, control: .lensButton(index), completion: completion)
+    }
+
+    /// Enables or disables customizable Lens button `index`'s layer without changing other Lens layers.
+    public func setLensButtonEnabled(_ enabled: Bool, at index: Int, completion: ((Bool) -> Void)? = nil) {
+        guard Self.lensButtonIndices.contains(index) else {
+            completion?(false)
+            return
+        }
+        setPermanentLensEnabled(enabled, control: .lensButton(index), completion: completion)
+    }
+
     /// Asks the Nose Adjustments Lens to display its own control drawer.
     ///
     /// Camera Kit delivers launch data when a Lens is applied, so reopening the drawer reapplies
@@ -1243,6 +1293,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             self.desiredLensStack.reset()
             self.retouchRequestedEnabled = false
             self.noseAdjustmentsRequestedEnabled = false
+            self.lensButtonRequestedEnabled = self.lensButtonRequestedEnabled.map { _ in false }
             self.notifyControlsDidChange()
             self.enqueueLensOperationOnQueue(.clear(preserveStack: false, completion: completion))
         }
@@ -1545,10 +1596,13 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var retouchRequestedEnabled = false
     private var configuredNoseAdjustmentsLens: Lens?
     private var noseAdjustmentsRequestedEnabled = false
+    private var configuredLensButtonLenses = [Lens?](repeating: nil, count: CameraController.lensButtonIndices.count)
+    private var lensButtonRequestedEnabled = [Bool](repeating: false, count: CameraController.lensButtonIndices.count)
 
     private enum PermanentLensControl {
         case retouch
         case noseAdjustments
+        case lensButton(Int)
     }
 
     private enum PendingLensOperation {
@@ -1677,6 +1731,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         switch control {
         case .retouch: return configuredRetouchLens
         case .noseAdjustments: return configuredNoseAdjustmentsLens
+        case let .lensButton(index): return configuredLensButtonLenses[index]
         }
     }
 
@@ -1684,6 +1739,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         switch control {
         case .retouch: configuredRetouchLens = lens
         case .noseAdjustments: configuredNoseAdjustmentsLens = lens
+        case let .lensButton(index): configuredLensButtonLenses[index] = lens
         }
     }
 
@@ -1691,6 +1747,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         switch control {
         case .retouch: return retouchRequestedEnabled
         case .noseAdjustments: return noseAdjustmentsRequestedEnabled
+        case let .lensButton(index): return lensButtonRequestedEnabled[index]
         }
     }
 
@@ -1698,15 +1755,25 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         switch control {
         case .retouch: retouchRequestedEnabled = enabled
         case .noseAdjustments: noseAdjustmentsRequestedEnabled = enabled
+        case let .lensButton(index): lensButtonRequestedEnabled[index] = enabled
         }
     }
 
     private func updateDesiredPersistentBases() {
-        let layers = [
+        let buttonLayers = Self.lensButtonIndices.map { index in
+            lensButtonRequestedEnabled[index] ? configuredLensButtonLenses[index] : nil
+        }
+        let layers = ([
             retouchRequestedEnabled ? configuredRetouchLens : nil,
             noseAdjustmentsRequestedEnabled ? configuredNoseAdjustmentsLens : nil,
-        ].compactMap { $0 }
-        desiredLensStack.setPersistentBases(layers)
+        ] + buttonLayers).compactMap { $0 }
+        // Both buttons may hold the same Lens; it is applied once.
+        let uniqueLayers = layers.reduce(into: [Lens]()) { unique, lens in
+            if !unique.contains(where: { lensesMatch($0, lens) }) {
+                unique.append(lens)
+            }
+        }
+        desiredLensStack.setPersistentBases(uniqueLayers)
     }
 
     private func activePersistentLens(matching configuredLens: Lens?) -> Lens? {
@@ -1828,7 +1895,12 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         processor: LensProcessor,
         completion: @escaping (Bool) -> Void
     ) {
-        let lenses = stack.applied
+        // A button may hold the pinned or selected Lens; Camera Kit gets each Lens once.
+        let lenses = stack.applied.reduce(into: [Lens]()) { unique, lens in
+            if !unique.contains(where: { lensesMatch($0, lens) }) {
+                unique.append(lens)
+            }
+        }
         switch lenses.count {
         case 0:
             processor.clear(completion: completion)

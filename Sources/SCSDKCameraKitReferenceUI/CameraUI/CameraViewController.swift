@@ -28,6 +28,9 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
     /// Receives completed recordings instead of presenting the reference video preview.
     public var onVideoRecorded: ((URL) -> Void)?
 
+    /// Receives captured photos instead of presenting the reference photo preview.
+    public var onPhotoCaptured: ((UIImage) -> Void)?
+
     /// Selects the on-screen video shown while Camera Kit records.
     public var recordingPreviewMode: RecordingPreviewMode = .lens {
         didSet {
@@ -265,6 +268,7 @@ open class CameraViewController: UIViewController, CameraControllerUIDelegate {
             controller.isHighDefinitionModeEnabled
         syncRetouchAction(with: controller)
         syncNoseAdjustmentsAction(with: controller)
+        cameraView.cameraActionsView.syncLensButtons(with: controller)
         syncAdjustment(
             cameraView.cameraActionsView.toneMapActionView,
             control: cameraView.toneMapControlView,
@@ -434,6 +438,9 @@ private extension CameraViewController {
         setupPortraitAdjustmentButtons()
         setupRetouchButton()
         setupNoseAdjustmentsButton()
+        cameraView.cameraActionsView.connectLensButtons(to: cameraController) { [weak self] hint in
+            self?.cameraView.showTransientHint(hint)
+        }
         setupHighDefinitionRenderingButton()
 
         cameraView.carouselView.delegate = self
@@ -763,7 +770,7 @@ extension CameraViewController: CarouselViewDelegate, CarouselViewDataSource {
 
 private extension CameraViewController {
     func updateLensStackPresentation() {
-        cameraView.lensLabel.text = cameraController.lensDisplayName
+        cameraView.showLensTitle(cameraController.lensDisplayName)
         cameraView.cameraBottomBar.closeButton.isHidden = cameraController.currentLens == nil
 
         if let currentLens = cameraController.currentLens {
@@ -795,9 +802,24 @@ extension CameraViewController {
     }
 
     private func capturePhoto() {
-        cameraController.takePhoto { image, error in
+        if let onPhotoCaptured {
+            // Saving a captured image does not require retaining the camera screen.
+            cameraController.takePhoto { image, error in
+                guard let image else {
+                    print("Photo capture failed: \(String(describing: error))")
+                    return
+                }
+                DispatchQueue.main.async {
+                    onPhotoCaptured(image)
+                }
+            }
+            return
+        }
+
+        cameraController.takePhoto { [weak self] image, error in
             guard let image else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
                 self.cameraController.restoreBrightnessIfNecessary()
                 let viewController = ImagePreviewViewController(image: image)
                 viewController.snapchatDelegate = self.cameraController.snapchatDelegate
@@ -845,8 +867,17 @@ extension CameraViewController {
         cameraView.setVideoCaptureButtonRecording(false)
         updateRecordingPreview()
         print("Finish recording")
-        cameraController.finishRecording { url, error in
-            DispatchQueue.main.async {
+        // Keep delivery of the finished file independent of the camera screen's lifetime.
+        let onVideoRecorded = onVideoRecorded
+        cameraController.finishRecording { [weak self] url, error in
+            DispatchQueue.main.async { [weak self] in
+                if let url, let onVideoRecorded {
+                    self?.restoreActiveCameraState()
+                    onVideoRecorded(url)
+                    return
+                }
+
+                guard let self else { return }
                 self.recordingFinalizing = false
                 guard let url else {
                     self.restoreActiveCameraState()
@@ -859,12 +890,6 @@ extension CameraViewController {
                         alert.addAction(UIAlertAction(title: "OK", style: .default))
                         self.present(alert, animated: true)
                     }
-                    return
-                }
-
-                if let onVideoRecorded = self.onVideoRecorded {
-                    self.restoreActiveCameraState()
-                    onVideoRecorded(url)
                     return
                 }
 

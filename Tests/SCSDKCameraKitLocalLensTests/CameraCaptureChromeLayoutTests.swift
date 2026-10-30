@@ -14,7 +14,7 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         XCTAssertEqual(metrics.captureControlSpacing, 18, accuracy: 0.01)
         XCTAssertEqual(metrics.captureControlsHeight, 64, accuracy: 0.01)
         XCTAssertEqual(metrics.swiftUIFooterBottomPadding, 76, accuracy: 0.01)
-        XCTAssertEqual(metrics.attributionFontSize, 11, accuracy: 0.01)
+        XCTAssertEqual(metrics.attributionFontSize, 9, accuracy: 0.01)
     }
 
     func testOtherDevicesUseOneUniformScaleFromTheIPhone16Pro() {
@@ -28,7 +28,7 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         XCTAssertEqual(metrics.captureControlSpacing, 18 * expectedScale, accuracy: 0.01)
         XCTAssertEqual(metrics.captureControlsHeight, 64 * expectedScale, accuracy: 0.01)
         XCTAssertEqual(metrics.swiftUIFooterBottomPadding, 76 * expectedScale, accuracy: 0.01)
-        XCTAssertEqual(metrics.attributionFontSize, 11 * expectedScale, accuracy: 0.01)
+        XCTAssertEqual(metrics.attributionFontSize, 9 * expectedScale, accuracy: 0.01)
     }
 
     func testInvalidViewportFallsBackToBaselineScale() {
@@ -57,6 +57,7 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
 
     func testUIKitRestoresTheBaselineCaptureGroup() {
         let cameraView = laidOutCameraView()
+        let metrics = CameraCaptureChromeLayout.metrics(for: CameraCaptureChromeLayout.iPhone16ProViewport)
         let photoFrame = cameraView.photoCaptureButton.convert(
             cameraView.photoCaptureButton.bounds,
             to: cameraView
@@ -74,7 +75,11 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         XCTAssertEqual(videoFrame.width, 58, accuracy: 0.5)
         XCTAssertEqual(groupFrame.midX, cameraView.bounds.midX, accuracy: 0.5)
         XCTAssertLessThan(photoFrame.maxX, videoFrame.minX)
-        XCTAssertEqual(cameraView.bounds.maxY - groupFrame.maxY, 116, accuracy: 0.5)
+        XCTAssertEqual(
+            cameraView.bounds.maxY - groupFrame.maxY,
+            metrics.bottomCarouselBottomGap + metrics.bottomCarouselHeight + metrics.captureControlsCarouselGap,
+            accuracy: 0.5
+        )
     }
 
     func testUIKitScalesTheSameBaselineOnACompactViewport() {
@@ -94,7 +99,7 @@ final class CameraCaptureChromeLayoutTests: XCTestCase {
         XCTAssertEqual(videoFrame.width, metrics.videoButtonDiameter, accuracy: 0.5)
         XCTAssertEqual(
             cameraView.bounds.maxY - cameraView.captureControlsView.frame.maxY,
-            116 * metrics.scale,
+            metrics.bottomCarouselBottomGap + metrics.bottomCarouselHeight + metrics.captureControlsCarouselGap,
             accuracy: 0.5
         )
     }

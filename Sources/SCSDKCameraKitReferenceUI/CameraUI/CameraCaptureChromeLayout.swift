@@ -23,9 +23,9 @@ public enum CameraCaptureChromeLayout {
 
         public var attributionTopOffset: CGFloat { 118 * scale }
         public var attributionTrailingInset: CGFloat { 16 * scale }
-        public var attributionFontSize: CGFloat { 11 * scale }
-        public var attributionIconSize: CGFloat { 16 * scale }
-        public var attributionSpacing: CGFloat { 4 * scale }
+        public var attributionFontSize: CGFloat { 9 * scale }
+        public var attributionIconSize: CGFloat { 13 * scale }
+        public var attributionSpacing: CGFloat { 3 * scale }
 
         public var cameraActionsTopInset: CGFloat { 6 * scale }
         public var cameraActionsTrailingInset: CGFloat { 8 * scale }
@@ -37,6 +37,20 @@ public enum CameraCaptureChromeLayout {
         public var carouselBottomSpacing: CGFloat { 96 * scale }
         public var swiftUICarouselTopInset: CGFloat { 364 * scale }
         public var swiftUICarouselBottomInset: CGFloat { 132 * scale }
+
+        // Bottom "U" layout: floating side stacks hug the screen edges and rest on the host's
+        // bottom chrome, with the capture row and a horizontal Lens carousel between them.
+        public var sideControlsEdgeInset: CGFloat { 2 * scale }
+        public var sideControlsBottomGap: CGFloat { 4 * scale }
+        public var sideControlsSpacing: CGFloat { 4 * scale }
+        public var bottomCarouselHeight: CGFloat { 40 * scale }
+        public var bottomCarouselBottomGap: CGFloat { 36 * scale }
+        public var bottomCarouselMaximumWidth: CGFloat { 300 * scale }
+        public var captureControlsCarouselGap: CGFloat { 28 * scale }
+        public var attributionLeadingGap: CGFloat { 10 * scale }
+        public var lensLabelTopInset: CGFloat { 6 * scale }
+        /// Space kept between Lens UI and the topmost bottom control.
+        public var lensUIControlsClearance: CGFloat { 8 * scale }
     }
 
     public static func metrics(for viewport: CGSize) -> Metrics {
@@ -57,7 +71,12 @@ public enum CameraCaptureChromeLayout {
     public static let videoButtonDiameter: CGFloat = 58
     public static let captureControlSpacing: CGFloat = 18
     public static let captureControlsHeight: CGFloat = 64
-    public static let attributionFontSize: CGFloat = 11
+    public static let attributionFontSize: CGFloat = 9
+
+    /// How long the Lens title stays up after a Lens change before fading out, and the fade length.
+    public static let lensTitleVisibleDuration: TimeInterval = 2.5
+    public static let lensTitleFadeDuration: TimeInterval = 0.4
+
 
     public static func trailingClearance(for viewportWidth: CGFloat) -> CGFloat {
         metrics(for: CGSize(width: viewportWidth, height: iPhone16ProViewport.height)).cameraActionsTrailingInset

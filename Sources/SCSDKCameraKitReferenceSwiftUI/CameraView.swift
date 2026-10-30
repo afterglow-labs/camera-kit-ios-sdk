@@ -49,6 +49,11 @@ public struct CameraView: View {
     private let recordingPreviewMode: RecordingPreviewMode
     private let lensContextMenuProvider: ((Lens) -> UIMenu?)?
     private let onVideoRecorded: ((URL) -> Void)?
+    private let onPhotoCaptured: ((UIImage) -> Void)?
+    private let hostBottomInset: CGFloat
+    private let contentTopInset: CGFloat
+    private let showsSnapAttribution: Bool
+    private let sideControlsAppearance: CameraActionsView.Appearance
 
     public init(
         cameraController: CameraController,
@@ -64,7 +69,12 @@ public struct CameraView: View {
         recordingPreviewMode: RecordingPreviewMode = .lens,
         lensContextMenuProvider: ((Lens) -> UIMenu?)? = nil,
         onVideoRecorded: ((URL) -> Void)? = nil,
-        onChromeHiddenChange: ((Bool) -> Void)? = nil
+        onPhotoCaptured: ((UIImage) -> Void)? = nil,
+        onChromeHiddenChange: ((Bool) -> Void)? = nil,
+        hostBottomInset: CGFloat = 0,
+        contentTopInset: CGFloat = 0,
+        showsSnapAttribution: Bool = true,
+        sideControlsAppearance: CameraActionsView.Appearance = .standard
     ) {
         self.cameraController = cameraController
         self.previewAspectRatio = previewAspectRatio
@@ -79,7 +89,12 @@ public struct CameraView: View {
         self.recordingPreviewMode = recordingPreviewMode
         self.lensContextMenuProvider = lensContextMenuProvider
         self.onVideoRecorded = onVideoRecorded
+        self.onPhotoCaptured = onPhotoCaptured
         self.onChromeHiddenChange = onChromeHiddenChange
+        self.hostBottomInset = hostBottomInset
+        self.contentTopInset = contentTopInset
+        self.showsSnapAttribution = showsSnapAttribution
+        self.sideControlsAppearance = sideControlsAppearance
     }
 
     public var body: some View {
@@ -90,6 +105,9 @@ public struct CameraView: View {
         GeometryReader { proxy in
             let viewportSize = proxy.size
             let metrics = CameraCaptureChromeLayout.metrics(for: viewportSize)
+            let controlsBottomInset = max(hostBottomInset, proxy.safeAreaInsets.bottom)
+            let footerBottomOffset = controlsBottomInset + metrics.bottomCarouselBottomGap
+                + metrics.bottomCarouselHeight + metrics.captureControlsCarouselGap
 
             ZStack {
                 PreviewLayer(
@@ -98,14 +116,17 @@ public struct CameraView: View {
                     aspectRatio: previewAspectRatio,
                     mirrored: previewMirrored,
                     rawRecordingPreviewMirrored: rawRecordingPreviewMirrored,
-                    recordingPreviewMode: recordingPreviewMode
+                    recordingPreviewMode: recordingPreviewMode,
+                    lensUIClearance: metrics.lensUIControlsClearance
                 )
                 .edgesIgnoringSafeArea(.all)
                 if cameraKitControlsVisible {
                     CameraInclusiveControlsRepresentable(
                         state: state,
                         cameraController: cameraController,
-                        metrics: metrics
+                        metrics: metrics,
+                        hostBottomInset: hostBottomInset,
+                        sideControlsAppearance: sideControlsAppearance
                     )
                     .frame(width: viewportSize.width, height: viewportSize.height)
                     .edgesIgnoringSafeArea(.all)
@@ -114,47 +135,51 @@ public struct CameraView: View {
                 if captureChromeVisible {
                     VStack {
                         LensHeader(lensName: state.activeLensDisplayName)
+                            .padding(.top, max(contentTopInset, proxy.safeAreaInsets.top) + metrics.lensLabelTopInset)
                         MessageView(
                             lensName: state.activeLensDisplayName,
                             lensID: state.activeLensDisplayID,
                             showing: state.showingMessage
                         )
                         Spacer()
+                    }
+                    .edgesIgnoringSafeArea(.top)
+                    .transition(.opacity)
+                    // Capture row sits directly above the carousel, which rests just above the host chrome.
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
                         MediaPickerView(provider: cameraController.lensMediaProvider)
                         LensFooter(
                             state: state,
                             cameraController: cameraController,
                             onVideoRecorded: onVideoRecorded,
-                            metrics: metrics
+                            onPhotoCaptured: onPhotoCaptured,
+                            metrics: metrics,
+                            showingSnapAttribution: showsSnapAttribution && state.showingSnapAttribution
                         )
+                        Color.clear.frame(height: footerBottomOffset)
                     }
+                    .frame(width: viewportSize.width)
+                    .edgesIgnoringSafeArea(.bottom)
                     .transition(.opacity)
                 }
-                if state.showingSnapAttribution && captureChromeVisible {
-                    SnapAttributionContainerRepresentable(metrics: metrics)
-                        .edgesIgnoringSafeArea(.all)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
                 if lensCarouselVisible {
-                    HStack {
+                    VStack(spacing: 0) {
                         Spacer(minLength: 0)
-
                         CarouselView(
                             availableLenses: $state.lenses,
                             selectedLens: $state.selectedLens,
-                            orientation: .vertical,
+                            orientation: .horizontal,
                             maximumVisibleItemCount: lensCarouselMaximumVisibleItemCount,
                             cameraController: cameraController,
                             lensContextMenuProvider: lensContextMenuProvider
                         )
-                        .frame(width: metrics.carouselWidth)
-                        .frame(maxHeight: .infinity)
-                        .padding(.top, metrics.swiftUICarouselTopInset)
-                        .padding(.bottom, metrics.swiftUICarouselBottomInset)
-                        .padding(.trailing, metrics.carouselTrailingInset)
+                        .frame(maxWidth: metrics.bottomCarouselMaximumWidth)
+                        .frame(height: metrics.bottomCarouselHeight)
+                        Color.clear.frame(height: controlsBottomInset + metrics.bottomCarouselBottomGap)
                     }
-                    .frame(width: viewportSize.width, height: viewportSize.height)
+                    .frame(width: viewportSize.width)
+                    .edgesIgnoringSafeArea(.bottom)
                     .transition(.opacity)
                 }
                 if captureChromeVisible {
@@ -210,10 +235,16 @@ private struct PreviewLayer: View {
     let mirrored: Bool
     let rawRecordingPreviewMirrored: Bool
     let recordingPreviewMode: RecordingPreviewMode
+    let lensUIClearance: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
             let previewSize = fittedPreviewSize(in: proxy.size, aspectRatio: aspectRatio.widthToHeight)
+            let previewBottom = (proxy.size.height + previewSize.height) / 2
+            // Kept while chrome is hidden too, so Lens UI doesn't jump when controls hide.
+            let lensUIBottomInset = state.lensControlsTop.map {
+                max(0, previewBottom - ($0 - lensUIClearance))
+            } ?? 0
             let presentation = RecordingPreviewPresentation.resolve(
                 mode: recordingPreviewMode,
                 isRecording: state.recording
@@ -228,7 +259,7 @@ private struct PreviewLayer: View {
                 }
                 PreviewView(
                     cameraKit: cameraController.cameraKit,
-                    bottomSafeAreaInset: state.chromeHidden ? 0 : LensUILayout.bottomSafeAreaInset,
+                    bottomSafeAreaInset: lensUIBottomInset,
                     outputEnabled: presentation.attachesLensOutput
                 )
                     .frame(width: previewSize.width, height: previewSize.height)
@@ -283,12 +314,6 @@ struct CameraRingLightEffectLayer: View {
                 .opacity(state.showingRingLight ? min(1, max(0.42, state.ringLightIntensity + 0.28)) : 0)
         }
     }
-}
-
-private enum LensUILayout {
-    static let bottomSafeAreaInset: CGFloat = 180
-    static let carouselTopInset: CGFloat = 372
-    static let carouselBottomInset: CGFloat = 116
 }
 
 @available(iOS 14.0, *)
@@ -442,63 +467,23 @@ private final class LayoutAwareRingLightContainerView: UIView {
     }
 }
 
-private struct SnapAttributionContainerRepresentable: UIViewRepresentable {
+private struct SnapAttributionRepresentable: UIViewRepresentable {
     let metrics: CameraCaptureChromeLayout.Metrics
 
-    func makeUIView(context: Context) -> SnapAttributionContainerView {
-        let view = SnapAttributionContainerView()
+    func makeUIView(context: Context) -> SnapAttributionView {
+        let view = SnapAttributionView()
+        view.isUserInteractionEnabled = false
         view.apply(metrics: metrics)
         return view
     }
 
-    func updateUIView(_ uiView: SnapAttributionContainerView, context: Context) {
+    func updateUIView(_ uiView: SnapAttributionView, context: Context) {
         uiView.apply(metrics: metrics)
     }
-}
 
-private final class SnapAttributionContainerView: UIView {
-    private var topConstraint: NSLayoutConstraint?
-    private var trailingConstraint: NSLayoutConstraint?
-    private let snapAttributionView: SnapAttributionView = {
-        let view = SnapAttributionView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setup()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setup()
-    }
-
-    private func setup() {
-        backgroundColor = .clear
-        isUserInteractionEnabled = false
-        addSubview(snapAttributionView)
-        let topConstraint = snapAttributionView.topAnchor.constraint(
-            equalTo: bottomAnchor,
-            constant: -118
-        )
-        let trailingConstraint = snapAttributionView.trailingAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.trailingAnchor,
-            constant: -16
-        )
-        self.topConstraint = topConstraint
-        self.trailingConstraint = trailingConstraint
-        NSLayoutConstraint.activate([
-            topConstraint,
-            trailingConstraint,
-        ])
-    }
-
-    func apply(metrics: CameraCaptureChromeLayout.Metrics) {
-        topConstraint?.constant = -metrics.attributionTopOffset
-        trailingConstraint?.constant = -metrics.attributionTrailingInset
-        snapAttributionView.apply(metrics: metrics)
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: SnapAttributionView, context: Context) -> CGSize? {
+        uiView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     }
 }
 
@@ -507,6 +492,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     @ObservedObject var state: CameraViewState
     let cameraController: CameraController
     let metrics: CameraCaptureChromeLayout.Metrics
+    let hostBottomInset: CGFloat
+    let sideControlsAppearance: CameraActionsView.Appearance
 
     func makeCoordinator() -> Coordinator {
         Coordinator(state: state, cameraController: cameraController)
@@ -516,7 +503,11 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         let view = InclusiveCameraControlsView()
         context.coordinator.controlsView = view
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
-        view.apply(metrics: metrics)
+        view.onControlsTopChange = { [weak state] top in
+            DispatchQueue.main.async { state?.lensControlsTop = top }
+        }
+        view.apply(metrics: metrics, hostBottomInset: hostBottomInset)
+        view.cameraActionsView.appearance = sideControlsAppearance
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -528,7 +519,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
-        uiView.apply(metrics: metrics)
+        uiView.apply(metrics: metrics, hostBottomInset: hostBottomInset)
+        uiView.cameraActionsView.appearance = sideControlsAppearance
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
             portrait: state.portraitAvailable || cameraController.isPortraitAdjustmentAvailable,
@@ -548,6 +540,14 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         init(state: CameraViewState, cameraController: CameraController) {
             self.state = state
             self.cameraController = cameraController
+        }
+
+        /// Shows `text` in the camera's hint area for a moment.
+        func showTransientHint(_ text: String) {
+            state.hint = text
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak state] in
+                if state?.hint == text { state?.hint = nil }
+            }
         }
 
         @objc
@@ -586,10 +586,13 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 @available(iOS 14.0, *)
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
-    private var cameraActionsTopConstraint: NSLayoutConstraint?
-    private var cameraActionsTrailingConstraint: NSLayoutConstraint?
-    private var cameraActionsWidthConstraint: NSLayoutConstraint?
+    private var cameraActionsBottomConstraint: NSLayoutConstraint?
     private var controlSpacingConstraints: [NSLayoutConstraint] = []
+    private var metrics = CameraCaptureChromeLayout.metrics(for: CameraCaptureChromeLayout.iPhone16ProViewport)
+    private var hostBottomInset: CGFloat = 0
+    private var reportedControlsTop: CGFloat?
+    /// Reports the top of the bottom controls (side stacks or the capture row and carousel, whichever is higher).
+    var onControlsTopChange: ((CGFloat) -> Void)?
     let flashControlView = FlashControlView()
     let flashControlDismissalHint = UILabel.controlDismissalHint()
     let toneMapControlView: AdjustmentControlView = {
@@ -623,12 +626,34 @@ private final class InclusiveCameraControlsView: UIView {
         setup()
     }
 
-    func apply(metrics: CameraCaptureChromeLayout.Metrics) {
-        cameraActionsTopConstraint?.constant = metrics.cameraActionsTopInset
-        cameraActionsTrailingConstraint?.constant = -metrics.cameraActionsTrailingInset
-        cameraActionsWidthConstraint?.constant = metrics.cameraActionsWidth
-        controlSpacingConstraints.forEach { $0.constant = -8 * metrics.scale }
+    func apply(metrics: CameraCaptureChromeLayout.Metrics, hostBottomInset: CGFloat) {
+        self.metrics = metrics
+        self.hostBottomInset = hostBottomInset
+        cameraActionsBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom)
+        controlSpacingConstraints.forEach { $0.constant = 8 * metrics.scale }
         cameraActionsView.apply(scale: metrics.scale)
+        setNeedsLayout()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        cameraActionsBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        cameraActionsView.layoutIfNeeded()
+        // Same rule as the UIKit camera: Lens UI ends at the topmost bottom control.
+        let controlsBottom = bounds.maxY - max(hostBottomInset, safeAreaInsets.bottom)
+        let footerTop = controlsBottom - metrics.bottomCarouselBottomGap - metrics.bottomCarouselHeight
+            - metrics.captureControlsCarouselGap - metrics.captureControlsHeight
+        let stackTops = [cameraActionsView.buttonStackView, cameraActionsView.lensButtonStackView]
+            .filter { !$0.isHidden && $0.frame.height > 0 }
+            .map { convert($0.bounds, from: $0).minY }
+        let top = (stackTops + [footerTop]).min() ?? footerTop
+        guard top.isFinite, reportedControlsTop.map({ abs($0 - top) > 0.5 }) ?? true else { return }
+        reportedControlsTop = top
+        onControlsTopChange?(top)
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -696,6 +721,9 @@ private final class InclusiveCameraControlsView: UIView {
         cameraActionsView.noseAdjustmentsActionView.toggleActionSettingsVisibility = { [weak cameraController] in
             cameraController?.showNoseAdjustmentControls()
         }
+        cameraActionsView.connectLensButtons(to: cameraController) { [weak coordinator] hint in
+            coordinator?.showTransientHint(hint)
+        }
 
         configureControlVisibilityCallbacks()
         updateFlashToggle(for: cameraController.cameraPosition)
@@ -728,6 +756,7 @@ private final class InclusiveCameraControlsView: UIView {
         } else {
             noseAdjustmentsAction.collapse()
         }
+        cameraActionsView.syncLensButtons(with: cameraController)
         syncAdjustment(
             cameraActionsView.toneMapActionView,
             control: toneMapControlView,
@@ -806,54 +835,46 @@ private final class InclusiveCameraControlsView: UIView {
 
         hideAllControls()
 
-        let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
-            equalTo: trailingAnchor,
-            constant: -CameraActionsView.adaptiveTrailingInset(forAvailableWidth: bounds.width)
+        let bottomConstraint = cameraActionsView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        // Popups open beside their buttons on the leading stack and grow upward; hints sit above them.
+        let flashSpacingConstraint = flashControlView.leadingAnchor.constraint(
+            equalTo: cameraActionsView.flashActionView.toggleButton.trailingAnchor,
+            constant: 8
         )
-        let topConstraint = cameraActionsView.topAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.topAnchor,
-            constant: 6
+        let toneSpacingConstraint = toneMapControlView.leadingAnchor.constraint(
+            equalTo: cameraActionsView.toneMapActionView.toggleButton.trailingAnchor,
+            constant: 8
         )
-        let widthConstraint = cameraActionsView.widthAnchor.constraint(equalToConstant: 40)
-        let flashSpacingConstraint = flashControlView.trailingAnchor.constraint(
-            equalTo: cameraActionsView.flashActionView.toggleButton.leadingAnchor,
-            constant: -8
+        let portraitSpacingConstraint = portraitControlView.leadingAnchor.constraint(
+            equalTo: cameraActionsView.portraitActionView.toggleButton.trailingAnchor,
+            constant: 8
         )
-        let toneSpacingConstraint = toneMapControlView.trailingAnchor.constraint(
-            equalTo: cameraActionsView.toneMapActionView.toggleButton.leadingAnchor,
-            constant: -8
-        )
-        let portraitSpacingConstraint = portraitControlView.trailingAnchor.constraint(
-            equalTo: cameraActionsView.portraitActionView.toggleButton.leadingAnchor,
-            constant: -8
-        )
-        cameraActionsTopConstraint = topConstraint
-        cameraActionsTrailingConstraint = trailingConstraint
-        cameraActionsWidthConstraint = widthConstraint
+        cameraActionsBottomConstraint = bottomConstraint
         controlSpacingConstraints = [flashSpacingConstraint, toneSpacingConstraint, portraitSpacingConstraint]
 
         NSLayoutConstraint.activate([
-            topConstraint,
-            trailingConstraint,
-            widthConstraint,
+            cameraActionsView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            cameraActionsView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            bottomConstraint,
 
             flashSpacingConstraint,
-            flashControlView.topAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
+            flashControlView.bottomAnchor.constraint(equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
             flashControlDismissalHint.leadingAnchor.constraint(equalTo: flashControlView.leadingAnchor),
             flashControlDismissalHint.trailingAnchor.constraint(equalTo: flashControlView.trailingAnchor),
-            flashControlDismissalHint.topAnchor.constraint(equalTo: flashControlView.bottomAnchor),
+            flashControlDismissalHint.bottomAnchor.constraint(equalTo: flashControlView.topAnchor),
 
             toneSpacingConstraint,
-            toneMapControlView.topAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.bottomAnchor),
+            toneMapControlView.bottomAnchor.constraint(equalTo: cameraActionsView.toneMapActionView.toggleButton.bottomAnchor),
             toneMapControlDismissalHint.leadingAnchor.constraint(equalTo: toneMapControlView.leadingAnchor),
             toneMapControlDismissalHint.trailingAnchor.constraint(equalTo: toneMapControlView.trailingAnchor),
-            toneMapControlDismissalHint.topAnchor.constraint(equalTo: toneMapControlView.bottomAnchor),
+            toneMapControlDismissalHint.bottomAnchor.constraint(equalTo: toneMapControlView.topAnchor),
 
             portraitSpacingConstraint,
-            portraitControlView.topAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.bottomAnchor),
+            portraitControlView.bottomAnchor.constraint(equalTo: cameraActionsView.portraitActionView.toggleButton.bottomAnchor),
             portraitControlDismissalHint.leadingAnchor.constraint(equalTo: portraitControlView.leadingAnchor),
             portraitControlDismissalHint.trailingAnchor.constraint(equalTo: portraitControlView.trailingAnchor),
-            portraitControlDismissalHint.topAnchor.constraint(equalTo: portraitControlView.bottomAnchor),
+            portraitControlDismissalHint.bottomAnchor.constraint(equalTo: portraitControlView.topAnchor),
         ])
     }
 
@@ -916,16 +937,37 @@ private final class InclusiveCameraControlsView: UIView {
     }
 }
 
-/// A sample implementation of a header view, which shows the lens name.
+/// Header showing the Lens name when it changes, then fading out like video-player overlay controls.
+@available(iOS 14.0, *)
 struct LensHeader: View {
     let lensName: String
+
+    @State private var visible = false
+    @State private var showGeneration = 0
 
     var body: some View {
         Text(lensName)
             .frame(maxWidth: .infinity, alignment: .center)
             .font(.headline)
             .foregroundColor(.white)
-            .padding()
+            .padding(.horizontal)
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(false)
+            .onAppear(perform: show)
+            .onChange(of: lensName) { _ in show() }
+    }
+
+    private func show() {
+        showGeneration &+= 1
+        let generation = showGeneration
+        visible = !lensName.isEmpty
+        guard visible else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CameraCaptureChromeLayout.lensTitleVisibleDuration) {
+            guard generation == showGeneration else { return }
+            withAnimation(.easeOut(duration: CameraCaptureChromeLayout.lensTitleFadeDuration)) {
+                visible = false
+            }
+        }
     }
 }
 
@@ -940,13 +982,16 @@ struct LensFooter: View {
 
     /// Receives completed recordings instead of opening the reference video preview.
     let onVideoRecorded: ((URL) -> Void)?
+    let onPhotoCaptured: ((UIImage) -> Void)?
 
     /// Uniform geometry derived from the iPhone 16 Pro baseline.
     let metrics: CameraCaptureChromeLayout.Metrics
 
+    /// Whether the "Powered by Snap" attribution is shown beside the record button.
+    let showingSnapAttribution: Bool
+
     var body: some View {
-        VStack(spacing: 8 * metrics.scale) {
-            HStack(spacing: metrics.captureControlSpacing) {
+        HStack(spacing: metrics.captureControlSpacing) {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
                         .font(.system(size: metrics.photoSymbolSize, weight: .semibold))
@@ -996,24 +1041,35 @@ struct LensFooter: View {
                 .accessibilityLabel(
                     state.recordingFinalizing ? "Finishing recording" : (state.recording ? "Stop recording" : "Start recording")
                 )
-            }
-            .frame(height: metrics.captureControlsHeight)
-
-            Button(
-                action: {
-                    state.selectedLens = nil
-                },
-                label: {
-                    Image("ck_close_circle", bundle: BundleHelper.resourcesBundle)
-                }
-            )
-            .frame(width: 32 * metrics.scale, height: 32 * metrics.scale)
-            .opacity(state.selectedLens == nil ? 0 : 1)
         }
-        .padding(.bottom, metrics.swiftUIFooterBottomPadding)
+        .frame(height: metrics.captureControlsHeight)
+        .overlay(alignment: .bottomTrailing) {
+            if showingSnapAttribution {
+                // A zero-width anchor on the row's trailing edge lets the attribution extend
+                // to the right of the record button without shifting the centered row.
+                SnapAttributionRepresentable(metrics: metrics)
+                    .fixedSize()
+                    .padding(.leading, metrics.attributionLeadingGap)
+                    .frame(width: 0, alignment: .leading)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func takePhoto() {
+        if let onPhotoCaptured {
+            cameraController.takePhoto { image, error in
+                guard let image else {
+                    print("Photo capture failed: \(String(describing: error))")
+                    return
+                }
+                DispatchQueue.main.async {
+                    onPhotoCaptured(image)
+                }
+            }
+            return
+        }
+
         cameraController.takePhoto { image, _ in
             guard let image else { return }
             state.captured = .photo(image: image)

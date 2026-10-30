@@ -93,6 +93,9 @@ public class CameraViewState: NSObject, ObservableObject {
     /// Whether non-camera chrome should be hidden for an unobstructed recording/preview.
     @Published var chromeHidden = false
 
+    /// Top of the bottom camera controls in viewport points; Lens UI is kept above it.
+    @Published var lensControlsTop: CGFloat?
+
     /// Whether video recording is currently active.
     @Published var recording = false
 

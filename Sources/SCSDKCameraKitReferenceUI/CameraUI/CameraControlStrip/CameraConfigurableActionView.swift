@@ -6,6 +6,11 @@ import UIKit
 /// View to use for camera actions that can be enabled/disabled and configured via separate buttons.
 public class CameraConfigurableActionView: UIView {
     private var layoutScale: CGFloat = 1
+
+    /// Outline drawn around this action's icons in place of their drop shadow; nil keeps the shadow.
+    public var iconOutline: UIColor? {
+        didSet { setNeedsLayout() }
+    }
     private var buttonSizeConstraints: [NSLayoutConstraint] = []
 
     // MARK: - Public
@@ -97,8 +102,8 @@ public class CameraConfigurableActionView: UIView {
 
     override public func layoutSubviews() {
         super.layoutSubviews()
-        toggleButton.applyCameraActionButtonShadow(scale: layoutScale)
-        configurationButton.applyCameraActionButtonShadow(scale: layoutScale)
+        toggleButton.applyCameraActionButtonShadow(scale: layoutScale, outline: iconOutline)
+        configurationButton.applyCameraActionButtonShadow(scale: layoutScale, outline: iconOutline)
     }
 
     /// Applies the parent camera chrome's uniform scale to both action buttons.

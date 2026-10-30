@@ -28,6 +28,65 @@ open class CameraView: UIView {
         }
     }
 
+    /// Height of host-app chrome drawn over the bottom of this view. The floating controls,
+    /// capture row, and carousel sit directly above it, and Lens UI is kept clear of it.
+    public var hostBottomInset: CGFloat = 0 {
+        didSet {
+            guard oldValue != hostBottomInset else { return }
+            setNeedsLayout()
+        }
+    }
+
+    /// Outlines the safe area Camera Kit gives Lens UI, with its numbers, to diagnose Lens layout.
+    public var showsLensSafeAreaOutline = false {
+        didSet {
+            lensSafeAreaOutlineTimer?.invalidate()
+            lensSafeAreaOutlineTimer = nil
+            lensSafeAreaOutlineView.isHidden = !showsLensSafeAreaOutline
+            guard showsLensSafeAreaOutline else { return }
+            addSubview(lensSafeAreaOutlineView)
+            // Camera Kit recomputes the safe area on its own schedule, so poll while diagnosing.
+            lensSafeAreaOutlineTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.updateLensSafeAreaOutline()
+            }
+        }
+    }
+
+    private var lensSafeAreaOutlineTimer: Timer?
+    private let lensSafeAreaOutlineView: UILabel = {
+        let label = UILabel()
+        label.isUserInteractionEnabled = false
+        label.layer.borderColor = UIColor.systemRed.cgColor
+        label.layer.borderWidth = 2
+        label.font = .monospacedSystemFont(ofSize: 10, weight: .bold)
+        label.textColor = .systemRed
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.isHidden = true
+        return label
+    }()
+
+    private func updateLensSafeAreaOutline() {
+        guard showsLensSafeAreaOutline else { return }
+        let safeArea = previewView.safeArea
+        lensSafeAreaOutlineView.frame = previewView.convert(safeArea, to: self)
+        lensSafeAreaOutlineView.text = String(
+            format: "Lens safe area\nx %.0f  y %.0f\nw %.0f  h %.0f\npreview %.0f x %.0f",
+            safeArea.minX, safeArea.minY, safeArea.width, safeArea.height,
+            previewView.bounds.width, previewView.bounds.height
+        )
+        bringSubviewToFront(lensSafeAreaOutlineView)
+    }
+
+    /// Distance from the top of this view to the top of the visible camera image. The Lens title
+    /// appears just inside it, clear of the status bar, Dynamic Island, and any letterboxing.
+    public var contentTopInset: CGFloat = 0 {
+        didSet {
+            guard oldValue != contentTopInset else { return }
+            setNeedsLayout()
+        }
+    }
+
     // MARK: View properties
 
     /// bottom bar below carousel
@@ -52,6 +111,7 @@ open class CameraView: UIView {
     /// top label to show current selected lens
     public let lensLabel: UILabel = {
         let label = UILabel()
+        label.alpha = 0
         label.accessibilityIdentifier = CameraElements.lensLabel.id
         label.font = .preferredFont(forTextStyle: .headline)
         label.textColor = .white
@@ -78,21 +138,20 @@ open class CameraView: UIView {
         return stackView
     }()
 
-    private var cameraActionsTopConstraint: NSLayoutConstraint?
-    private var cameraActionsTrailingConstraint: NSLayoutConstraint?
-    private var cameraActionsWidthConstraint: NSLayoutConstraint?
-    private var carouselTrailingConstraint: NSLayoutConstraint?
-    private var carouselTopConstraint: NSLayoutConstraint?
+    private var cameraActionsBottomConstraint: NSLayoutConstraint?
+    private var lensLabelTopConstraint: NSLayoutConstraint?
+    private var lensTitleFadeWorkItem: DispatchWorkItem?
     private var carouselBottomConstraint: NSLayoutConstraint?
-    private var carouselWidthConstraint: NSLayoutConstraint?
+    private var carouselHeightConstraint: NSLayoutConstraint?
+    private var carouselMaximumWidthConstraint: NSLayoutConstraint?
+    private var carouselPreferredWidthConstraint: NSLayoutConstraint?
     private var photoButtonWidthConstraint: NSLayoutConstraint?
     private var photoButtonHeightConstraint: NSLayoutConstraint?
     private var videoButtonWidthConstraint: NSLayoutConstraint?
     private var videoButtonHeightConstraint: NSLayoutConstraint?
     private var captureControlsBottomConstraint: NSLayoutConstraint?
     private var captureControlsHeightConstraint: NSLayoutConstraint?
-    private var attributionTopConstraint: NSLayoutConstraint?
-    private var attributionTrailingConstraint: NSLayoutConstraint?
+    private var attributionLeadingConstraint: NSLayoutConstraint?
 
     /// Control view for switching between flash and ring light as well as controlling ring light color and intensity.
     public lazy var flashControlView: FlashControlView = {
@@ -166,7 +225,7 @@ open class CameraView: UIView {
     /// carousel to scroll through lenses
     public let carouselView: CarouselView = {
         let view = CarouselView()
-        view.orientation = .vertical
+        view.orientation = .horizontal
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -200,7 +259,7 @@ open class CameraView: UIView {
         return button
     }()
 
-    /// Compact capture controls shown below the lens carousel.
+    /// Compact capture controls shown above the lens carousel.
     public let captureControlsView: UIStackView = {
         let stackView = UIStackView()
         stackView.axis = .horizontal
@@ -270,6 +329,7 @@ open class CameraView: UIView {
         let previewFrame = resolvedPreviewFrame
         rawCameraPreviewView.frame = previewFrame
         previewView.frame = previewFrame
+        updateLensUIBottomOcclusion()
         previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
@@ -279,21 +339,20 @@ open class CameraView: UIView {
     private func updateChromeLayout() {
         let metrics = CameraCaptureChromeLayout.metrics(for: bounds.size)
 
-        cameraActionsTopConstraint?.constant = metrics.cameraActionsTopInset
-        cameraActionsTrailingConstraint?.constant = -metrics.cameraActionsTrailingInset
-        cameraActionsWidthConstraint?.constant = metrics.cameraActionsWidth
+        cameraActionsBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom)
+        lensLabelTopConstraint?.constant = max(contentTopInset, safeAreaInsets.top) + metrics.lensLabelTopInset
         cameraActionsView.apply(scale: metrics.scale)
 
-        carouselTrailingConstraint?.constant = -metrics.carouselTrailingInset
-        carouselTopConstraint?.constant = metrics.carouselTopSpacing
-        carouselBottomConstraint?.constant = -metrics.carouselBottomSpacing
-        carouselWidthConstraint?.constant = metrics.carouselWidth
+        carouselBottomConstraint?.constant = -metrics.bottomCarouselBottomGap
+        carouselHeightConstraint?.constant = metrics.bottomCarouselHeight
+        carouselMaximumWidthConstraint?.constant = metrics.bottomCarouselMaximumWidth
+        carouselPreferredWidthConstraint?.constant = metrics.bottomCarouselMaximumWidth
 
         photoButtonWidthConstraint?.constant = metrics.photoButtonDiameter
         photoButtonHeightConstraint?.constant = metrics.photoButtonDiameter
         videoButtonWidthConstraint?.constant = metrics.videoButtonDiameter
         videoButtonHeightConstraint?.constant = metrics.videoButtonDiameter
-        captureControlsBottomConstraint?.constant = -metrics.captureControlsBottomClearance
+        captureControlsBottomConstraint?.constant = -metrics.captureControlsCarouselGap
         captureControlsHeightConstraint?.constant = metrics.captureControlsHeight
         captureControlsView.spacing = metrics.captureControlSpacing
 
@@ -316,8 +375,7 @@ open class CameraView: UIView {
             )
         }
 
-        attributionTopConstraint?.constant = -metrics.attributionTopOffset
-        attributionTrailingConstraint?.constant = -metrics.attributionTrailingInset
+        attributionLeadingConstraint?.constant = metrics.attributionLeadingGap
         snapAttributionView.apply(metrics: metrics)
     }
 }
@@ -419,22 +477,13 @@ extension CameraView {
 extension CameraView {
     private func setupCameraActionsView() {
         addSubview(cameraActionsView)
-        let topConstraint = cameraActionsView.topAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.topAnchor,
-            constant: 6
-        )
-        let trailingConstraint = cameraActionsView.trailingAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.trailingAnchor,
-            constant: -8
-        )
-        let widthConstraint = cameraActionsView.widthAnchor.constraint(equalToConstant: 40)
-        cameraActionsTopConstraint = topConstraint
-        cameraActionsTrailingConstraint = trailingConstraint
-        cameraActionsWidthConstraint = widthConstraint
+        let bottomConstraint = cameraActionsView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        cameraActionsBottomConstraint = bottomConstraint
         NSLayoutConstraint.activate([
-            topConstraint,
-            trailingConstraint,
-            widthConstraint,
+            cameraActionsView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            cameraActionsView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            bottomConstraint,
         ])
     }
 }
@@ -444,10 +493,51 @@ extension CameraView {
 extension CameraView {
     private func setupLensLabel() {
         addSubview(lensLabel)
+        let topConstraint = lensLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6)
+        lensLabelTopConstraint = topConstraint
         NSLayoutConstraint.activate([
-            lensLabel.centerYAnchor.constraint(equalTo: cameraActionsView.flipCameraButton.centerYAnchor),
+            topConstraint,
             lensLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
         ])
+    }
+
+    /// Shows `text` in the hint label for a moment, then fades it out.
+    public func showTransientHint(_ text: String) {
+        hintLabel.text = text
+        hintLabel.layer.removeAllAnimations()
+        hintLabel.alpha = 0
+        UIView.animate(withDuration: 0.25) {
+            self.hintLabel.alpha = 1
+        } completion: { finished in
+            guard finished else { return }
+            UIView.animate(withDuration: 0.4, delay: 2) {
+                self.hintLabel.alpha = 0
+            }
+        }
+    }
+
+    /// Shows the Lens title when it changes, then fades it out like video-player overlay controls.
+    public func showLensTitle(_ title: String?) {
+        let title = title ?? ""
+        guard title != lensLabel.text else { return }
+        lensLabel.text = title
+        lensTitleFadeWorkItem?.cancel()
+        lensLabel.layer.removeAllAnimations()
+        guard !title.isEmpty else {
+            lensLabel.alpha = 0
+            return
+        }
+        lensLabel.alpha = 1
+        let fade = DispatchWorkItem { [weak self] in
+            UIView.animate(withDuration: CameraCaptureChromeLayout.lensTitleFadeDuration) {
+                self?.lensLabel.alpha = 0
+            }
+        }
+        lensTitleFadeWorkItem = fade
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + CameraCaptureChromeLayout.lensTitleVisibleDuration,
+            execute: fade
+        )
     }
 }
 
@@ -456,28 +546,33 @@ extension CameraView {
 extension CameraView {
     private func setupCarousel() {
         addSubview(carouselView)
-        let trailingConstraint = carouselView.trailingAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.trailingAnchor,
-            constant: -10
-        )
-        let topConstraint = carouselView.topAnchor.constraint(
-            equalTo: cameraActionsView.bottomAnchor,
-            constant: 12
-        )
+        // Centered between the two side stacks, just above the host chrome.
         let bottomConstraint = carouselView.bottomAnchor.constraint(
-            equalTo: cameraBottomBar.topAnchor,
-            constant: -96
+            equalTo: cameraActionsView.bottomAnchor,
+            constant: -8
         )
-        let widthConstraint = carouselView.widthAnchor.constraint(equalToConstant: 62)
-        carouselTrailingConstraint = trailingConstraint
-        carouselTopConstraint = topConstraint
+        let heightConstraint = carouselView.heightAnchor.constraint(equalToConstant: 48)
+        let maximumWidthConstraint = carouselView.widthAnchor.constraint(lessThanOrEqualToConstant: 300)
+        let preferredWidthConstraint = carouselView.widthAnchor.constraint(equalToConstant: 300)
+        preferredWidthConstraint.priority = .defaultHigh
         carouselBottomConstraint = bottomConstraint
-        carouselWidthConstraint = widthConstraint
+        carouselHeightConstraint = heightConstraint
+        carouselMaximumWidthConstraint = maximumWidthConstraint
+        carouselPreferredWidthConstraint = preferredWidthConstraint
         NSLayoutConstraint.activate([
-            trailingConstraint,
-            topConstraint,
+            carouselView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            carouselView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: cameraActionsView.buttonStackView.trailingAnchor,
+                constant: 6
+            ),
+            carouselView.trailingAnchor.constraint(
+                lessThanOrEqualTo: cameraActionsView.lensButtonStackView.leadingAnchor,
+                constant: -6
+            ),
             bottomConstraint,
-            widthConstraint,
+            heightConstraint,
+            maximumWidthConstraint,
+            preferredWidthConstraint,
         ])
     }
 }
@@ -495,8 +590,8 @@ extension CameraView {
         let videoWidthConstraint = videoCaptureButton.widthAnchor.constraint(equalToConstant: 38)
         let videoHeightConstraint = videoCaptureButton.heightAnchor.constraint(equalToConstant: 38)
         let bottomConstraint = captureControlsView.bottomAnchor.constraint(
-            equalTo: bottomAnchor,
-            constant: -116
+            equalTo: carouselView.topAnchor,
+            constant: -2
         )
         let heightConstraint = captureControlsView.heightAnchor.constraint(equalToConstant: 42)
         photoButtonWidthConstraint = photoWidthConstraint
@@ -531,13 +626,27 @@ extension CameraView {
 
 extension CameraView {
     private func setupLensUIBottomOcclusionView() {
+        lensUIBottomOcclusionView.translatesAutoresizingMaskIntoConstraints = true
         addSubview(lensUIBottomOcclusionView)
-        NSLayoutConstraint.activate([
-            lensUIBottomOcclusionView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            lensUIBottomOcclusionView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            lensUIBottomOcclusionView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            lensUIBottomOcclusionView.heightAnchor.constraint(equalToConstant: Constants.lensUIBottomSafeAreaInset),
-        ])
+    }
+
+    /// Lenses may draw UI anywhere above the bottom controls, across the full width.
+    private func updateLensUIBottomOcclusion() {
+        cameraActionsView.layoutIfNeeded()
+        let metrics = CameraCaptureChromeLayout.metrics(for: bounds.size)
+        let controls: [UIView] = [
+            cameraActionsView.buttonStackView,
+            cameraActionsView.lensButtonStackView,
+            captureControlsView,
+            carouselView,
+            snapAttributionView,
+        ]
+        let controlsTop = controls
+            .filter { !$0.isHidden && $0.window != nil }
+            .map { convert($0.bounds, from: $0).minY }
+            .min() ?? (bounds.maxY - max(hostBottomInset, safeAreaInsets.bottom))
+        let top = max(bounds.minY, min(bounds.maxY, controlsTop - metrics.lensUIControlsClearance))
+        lensUIBottomOcclusionView.frame = CGRect(x: 0, y: top, width: bounds.width, height: bounds.maxY - top)
     }
 }
 
@@ -547,7 +656,7 @@ extension CameraView {
     private func setupMediaPicker() {
         addSubview(mediaPickerView)
         NSLayoutConstraint.activate([
-            mediaPickerView.bottomAnchor.constraint(equalTo: carouselView.topAnchor),
+            mediaPickerView.bottomAnchor.constraint(equalTo: captureControlsView.topAnchor, constant: -4),
             mediaPickerView.centerXAnchor.constraint(equalTo: centerXAnchor),
             mediaPickerView.widthAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.widthAnchor),
         ])
@@ -610,19 +719,18 @@ extension CameraView {
 extension CameraView {
     private func setupSnapAttributionView() {
         addSubview(snapAttributionView)
-        let topConstraint = snapAttributionView.topAnchor.constraint(
-            equalTo: cameraBottomBar.topAnchor,
-            constant: -118
+        let leadingConstraint = snapAttributionView.leadingAnchor.constraint(
+            equalTo: captureControlsView.trailingAnchor,
+            constant: 10
         )
-        let trailingConstraint = snapAttributionView.trailingAnchor.constraint(
-            equalTo: safeAreaLayoutGuide.trailingAnchor,
-            constant: -16
-        )
-        attributionTopConstraint = topConstraint
-        attributionTrailingConstraint = trailingConstraint
+        attributionLeadingConstraint = leadingConstraint
         NSLayoutConstraint.activate([
-            topConstraint,
-            trailingConstraint,
+            leadingConstraint,
+            snapAttributionView.bottomAnchor.constraint(equalTo: captureControlsView.bottomAnchor),
+            snapAttributionView.trailingAnchor.constraint(
+                lessThanOrEqualTo: cameraActionsView.lensButtonStackView.leadingAnchor,
+                constant: -4
+            ),
         ])
     }
 }
@@ -645,11 +753,11 @@ extension CameraView {
     private func setupFlashControlView() {
         addSubview(flashControlView)
         NSLayoutConstraint.activate([
-            cameraActionsView.flashActionView.toggleButton.leadingAnchor.constraint(
-                equalTo: flashControlView.trailingAnchor,
+            flashControlView.leadingAnchor.constraint(
+                equalTo: cameraActionsView.flashActionView.toggleButton.trailingAnchor,
                 constant: 8.0
             ),
-            flashControlView.topAnchor.constraint(
+            flashControlView.bottomAnchor.constraint(
                 equalTo: cameraActionsView.flashActionView.toggleButton.bottomAnchor),
         ])
     }
@@ -659,7 +767,7 @@ extension CameraView {
         NSLayoutConstraint.activate([
             flashControlDismissalHint.leadingAnchor.constraint(equalTo: flashControlView.leadingAnchor),
             flashControlDismissalHint.trailingAnchor.constraint(equalTo: flashControlView.trailingAnchor),
-            flashControlDismissalHint.topAnchor.constraint(equalTo: flashControlView.bottomAnchor),
+            flashControlDismissalHint.bottomAnchor.constraint(equalTo: flashControlView.topAnchor),
         ])
     }
 
@@ -692,10 +800,10 @@ extension CameraView {
     private func setupToneMapControlView() {
         addSubview(toneMapControlView)
         NSLayoutConstraint.activate([
-            toneMapControlView.trailingAnchor.constraint(
-                equalTo: cameraActionsView.toneMapActionView.toggleButton.leadingAnchor, constant: -8.0
+            toneMapControlView.leadingAnchor.constraint(
+                equalTo: cameraActionsView.toneMapActionView.toggleButton.trailingAnchor, constant: 8.0
             ),
-            toneMapControlView.topAnchor.constraint(
+            toneMapControlView.bottomAnchor.constraint(
                 equalTo: cameraActionsView.toneMapActionView.toggleButton.bottomAnchor),
         ])
     }
@@ -705,7 +813,7 @@ extension CameraView {
         NSLayoutConstraint.activate([
             toneMapControlDismissalHintLabel.leadingAnchor.constraint(equalTo: toneMapControlView.leadingAnchor),
             toneMapControlDismissalHintLabel.trailingAnchor.constraint(equalTo: toneMapControlView.trailingAnchor),
-            toneMapControlDismissalHintLabel.topAnchor.constraint(equalTo: toneMapControlView.bottomAnchor),
+            toneMapControlDismissalHintLabel.bottomAnchor.constraint(equalTo: toneMapControlView.topAnchor),
         ])
     }
 
@@ -738,10 +846,10 @@ extension CameraView {
     private func setupPortraitControlView() {
         addSubview(portraitControlView)
         NSLayoutConstraint.activate([
-            portraitControlView.trailingAnchor.constraint(
-                equalTo: cameraActionsView.portraitActionView.toggleButton.leadingAnchor, constant: -8.0
+            portraitControlView.leadingAnchor.constraint(
+                equalTo: cameraActionsView.portraitActionView.toggleButton.trailingAnchor, constant: 8.0
             ),
-            portraitControlView.topAnchor.constraint(
+            portraitControlView.bottomAnchor.constraint(
                 equalTo: cameraActionsView.portraitActionView.toggleButton.bottomAnchor
             ),
         ])
@@ -752,7 +860,7 @@ extension CameraView {
         NSLayoutConstraint.activate([
             portraitControlDismissalHintLabel.leadingAnchor.constraint(equalTo: portraitControlView.leadingAnchor),
             portraitControlDismissalHintLabel.trailingAnchor.constraint(equalTo: portraitControlView.trailingAnchor),
-            portraitControlDismissalHintLabel.topAnchor.constraint(equalTo: portraitControlView.bottomAnchor),
+            portraitControlDismissalHintLabel.bottomAnchor.constraint(equalTo: portraitControlView.topAnchor),
         ])
     }
 
@@ -815,11 +923,5 @@ public extension CameraView {
         addSubview(view)
 
         view.show()
-    }
-}
-
-private extension CameraView {
-    enum Constants {
-        static let lensUIBottomSafeAreaInset: CGFloat = 180
     }
 }

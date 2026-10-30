@@ -44,6 +44,10 @@ public struct CarouselView: UIViewRepresentable {
         inner.maximumVisibleItemCount = maximumVisibleItemCount
         inner.delegate = context.coordinator
         inner.dataSource = context.coordinator
+        // Let the SwiftUI frame decide the size, as Auto Layout does in the UIKit camera; otherwise
+        // the 62pt intrinsic height wins and the Lenses render larger than the slot they were given.
+        inner.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        inner.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         return inner
     }
 
@@ -52,13 +56,31 @@ public struct CarouselView: UIViewRepresentable {
         uiView.orientation = orientation
         uiView.maximumVisibleItemCount = maximumVisibleItemCount
         let item = context.coordinator.item(for: selectedLens)
-        if context.coordinator.availableLenses.map(\.id) != availableLenses.map(\.id) {
+        // Lens IDs are only unique within a group, so compare both, in order.
+        if context.coordinator.availableLenses.map(Self.identity) != availableLenses.map(Self.identity) {
             context.coordinator.availableLenses = availableLenses
             uiView.reloadData()
         }
         if uiView.selectedItem != item {
             uiView.selectItem(item)
         }
+    }
+
+    @available(iOS 16.0, *)
+    public func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: SCSDKCameraKitReferenceUI.CarouselView,
+        context: Context
+    ) -> CGSize? {
+        let intrinsic = uiView.intrinsicContentSize
+        return CGSize(
+            width: proposal.width ?? max(0, intrinsic.width),
+            height: proposal.height ?? max(0, intrinsic.height)
+        )
+    }
+
+    private static func identity(of lens: Lens) -> [String] {
+        [lens.groupId, lens.id]
     }
 }
 
