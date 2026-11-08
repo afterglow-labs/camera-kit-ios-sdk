@@ -249,16 +249,7 @@ public final class LocalLensBundle {
     }
 
     private static func sha256(of fileURL: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: fileURL)
-        defer { handle.closeFile() }
-
-        var hasher = SHA256()
-        while true {
-            let chunk = handle.readData(ofLength: 1_048_576)
-            guard !chunk.isEmpty else { break }
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize().map { String(format: "%02X", $0) }.joined()
+        try LocalLensFileHasher.sha256(of: fileURL)
     }
 }
 

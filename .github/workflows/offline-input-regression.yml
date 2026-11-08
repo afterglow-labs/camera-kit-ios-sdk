@@ -14,6 +14,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Verify bounded Lens hashing memory
+        run: |
+          xcrun swiftc \
+            Sources/SCSDKCameraKitLocalLens/LocalLensFileHasher.swift \
+            Tests/LocalLensFileHasherTests/main.swift \
+            -o /tmp/local-lens-file-hasher-tests
+          /tmp/local-lens-file-hasher-tests
       - name: Select an available iPhone simulator
         run: |
           simulator_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(device["udid"] for runtime in data["devices"].values() for device in runtime if device["name"].startswith("iPhone")))')"
