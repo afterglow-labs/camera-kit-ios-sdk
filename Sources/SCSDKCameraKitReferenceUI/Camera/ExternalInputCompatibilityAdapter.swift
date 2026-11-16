@@ -6,7 +6,12 @@ import CoreVideo
 import SCSDKCameraKit
 import VideoToolbox
 
-/// Normalizes caller-supplied video frames to formats accepted by Camera Kit's Lens processor.
+/// Sits between a camera input and Camera Kit.
+///
+/// Video frames go on to Camera Kit, normalized to a format its Lens processor accepts. Microphone audio
+/// does not: Camera Kit makes every audio buffer wait for the Lens engine, and a capture callback that
+/// waits too long loses audio. The audio goes to `microphoneAudioHandler` instead, so Lenses never see it.
+/// The built-in camera input is wrapped as well as caller-supplied ones.
 final class ExternalInputCompatibilityAdapter: NSObject, Input, InputDestination {
     weak var destination: InputDestination?
 
@@ -21,9 +26,11 @@ final class ExternalInputCompatibilityAdapter: NSObject, Input, InputDestination
 
     private let source: Input
     private let videoFrameConverter = ExternalInputVideoFrameConverter()
+    private let microphoneAudioHandler: (CMSampleBuffer) -> Void
 
-    init(source: Input) {
+    init(source: Input, microphoneAudioHandler: @escaping (CMSampleBuffer) -> Void) {
         self.source = source
+        self.microphoneAudioHandler = microphoneAudioHandler
         super.init()
         source.destination = self
     }
@@ -54,7 +61,8 @@ final class ExternalInputCompatibilityAdapter: NSObject, Input, InputDestination
     }
 
     func input(_ input: Input, receivedAudioSampleBuffer sampleBuffer: CMSampleBuffer) {
-        destination?.input(self, receivedAudioSampleBuffer: sampleBuffer)
+        // Deliberately not forwarded to `destination`: see the type's documentation.
+        microphoneAudioHandler(sampleBuffer)
     }
 }
 

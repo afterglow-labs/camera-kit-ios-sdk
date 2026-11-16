@@ -167,10 +167,9 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         label: "com.snap.camerakit.reference-ui.recording-media",
         qos: .userInitiated
     )
-    private let callbackLock = NSLock()
+    private let mediaGate = RecordingMediaGate()
     private let stateLock = NSLock()
 
-    private var acceptingMedia = false
     private var state: State = .ready
     private var finishCompletions: [((URL?, Error?) -> Void)] = []
 
@@ -178,6 +177,9 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
     private var firstVideoPresentationTime: CMTime?
     private var lastVideoEndTime: CMTime?
     private var lastAudioEndTime: CMTime?
+    private var newestVideoTime: CMTime?
+    private var audioContinuity = RecordingAudioContinuity()
+    private var filledAudioGap = CMTime.zero
     private var pendingVideoFrames = FIFOQueue<VideoFrame>()
     private var pendingAudioBuffers = FIFOQueue<CMSampleBuffer>()
     private var recordingFailure: Error?
@@ -248,9 +250,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         state = .recording
         stateLock.unlock()
 
-        callbackLock.lock()
-        acceptingMedia = true
-        callbackLock.unlock()
+        mediaGate.open()
         currentlyRequiresPixelBuffer = true
     }
 
@@ -281,9 +281,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             return
         }
 
-        callbackLock.lock()
-        acceptingMedia = false
-        callbackLock.unlock()
+        mediaGate.close()
         currentlyRequiresPixelBuffer = false
 
         mediaQueue.async { [self] in
@@ -297,30 +295,23 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
         _ cameraKit: CameraKitProtocol,
         didOutputVideoSampleBuffer sampleBuffer: CMSampleBuffer
     ) {
-        callbackLock.lock()
-        guard acceptingMedia else {
-            callbackLock.unlock()
-            return
+        mediaGate.admitVideo {
+            mediaQueue.sync { [self] in
+                enqueueVideo(sampleBuffer)
+            }
         }
-        mediaQueue.sync { [self] in
-            enqueueVideo(sampleBuffer)
-        }
-        callbackLock.unlock()
     }
 
     public func cameraKit(
         _ cameraKit: CameraKitProtocol,
         didOutputAudioSampleBuffer sampleBuffer: CMSampleBuffer
     ) {
-        callbackLock.lock()
-        guard acceptingMedia else {
-            callbackLock.unlock()
-            return
+        // This runs on the microphone capture queue for live audio, so it only queues the buffer.
+        mediaGate.admitAudio {
+            mediaQueue.async { [self, sampleBuffer] in
+                enqueueAudio(sampleBuffer)
+            }
         }
-        mediaQueue.async { [self, sampleBuffer] in
-            enqueueAudio(sampleBuffer)
-        }
-        callbackLock.unlock()
     }
 
     func setVideoTransform(_ transform: CGAffineTransform) {
@@ -349,6 +340,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             sessionStartTime = presentationTime
             firstVideoPresentationTime = presentationTime
         }
+        newestVideoTime = presentationTime
 
         let endTime = sampleEndTime(
             sampleBuffer,
@@ -410,7 +402,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
     }
 
     private func drainAudioBuffers() {
-        guard let sessionStartTime else { return }
+        guard let sessionStartTime, let newestVideoTime else { return }
 
         while recordingFailure == nil, let sampleBuffer = pendingAudioBuffers.first {
             let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -427,6 +419,21 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             }
 
             guard audioInput.isReadyForMoreMediaData else { return }
+
+            // The writer packs audio back to back, so a hole left by lost audio is written as silence.
+            // Otherwise everything after the hole would play early.
+            if let silence = silence(before: sampleBuffer, capturedAt: presentationTime, newestVideoTime),
+               let duration = audioDuration(of: silence) {
+                guard audioInput.append(silence) else {
+                    recordingFailure = RecordingFailure.appendFailed(mediaType: "audio", underlying: writer.error)
+                    return
+                }
+                audioContinuity.didWrite(duration: duration, at: CMSampleBufferGetPresentationTimeStamp(silence))
+                filledAudioGap = CMTimeAdd(filledAudioGap, duration)
+                // Ask again: a long hole is filled in steps, and the writer may not be ready for more.
+                continue
+            }
+
             _ = pendingAudioBuffers.popFirst()
             guard audioInput.append(sampleBuffer) else {
                 recordingFailure = RecordingFailure.appendFailed(mediaType: "audio", underlying: writer.error)
@@ -434,8 +441,48 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             }
 
             writtenAudioBuffers += 1
+            if let duration = audioDuration(of: sampleBuffer) {
+                audioContinuity.didWrite(duration: duration, at: presentationTime)
+            } else {
+                // Without a length the write position is unknown, so measure afresh from the next buffer
+                // rather than risk padding audio that was never missing.
+                audioContinuity = RecordingAudioContinuity()
+            }
             lastAudioEndTime = sampleEndTime(sampleBuffer, fallbackDuration: .zero)
         }
+    }
+
+    /// The next stretch of silence owed before `sampleBuffer`, or nil when it follows on from the audio
+    /// written so far.
+    private func silence(
+        before sampleBuffer: CMSampleBuffer,
+        capturedAt presentationTime: CMTime,
+        _ newestVideoTime: CMTime
+    ) -> CMSampleBuffer? {
+        let gap = audioContinuity.silenceNeeded(before: presentationTime, newestVideoTime: newestVideoTime)
+        guard gap > .zero else { return nil }
+        return RecordingSilence.makeSampleBuffer(
+            matching: sampleBuffer,
+            duration: CMTimeMinimum(gap, RecordingSilence.maximumDuration),
+            presentationTime: CMTimeSubtract(presentationTime, gap)
+        )
+    }
+
+    /// How long `sampleBuffer` plays for. Some sources stamp audio without a duration, in which case it
+    /// follows from the sample count. Nil when neither is available.
+    private func audioDuration(of sampleBuffer: CMSampleBuffer) -> CMTime? {
+        let duration = CMSampleBufferGetDuration(sampleBuffer)
+        if duration.isValid, duration.isNumeric, duration > .zero {
+            return duration
+        }
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)?.pointee,
+              streamDescription.mSampleRate > 0 else {
+            return nil
+        }
+        let frameCount = CMSampleBufferGetNumSamples(sampleBuffer) * Int(max(streamDescription.mFramesPerPacket, 1))
+        guard frameCount > 0 else { return nil }
+        return CMTime(value: CMTimeValue(frameCount), timescale: CMTimeScale(streamDescription.mSampleRate.rounded()))
     }
 
     private func beginFinishing() {
@@ -569,6 +616,7 @@ public final class CameraKitRecordingOutput: NSObject, Output, OutputRequiringPi
             "[CameraKit Recorder] requested=\(Int(configuration.outputSize.width))x\(Int(configuration.outputSize.height))@\(configuration.framesPerSecond) "
                 + "video=\(writtenVideoBuffers)/\(receivedVideoBuffers) audio=\(writtenAudioBuffers)/\(receivedAudioBuffers) "
                 + "measuredFPS=\(measuredFramesPerSecond) audioPreroll=\(skippedAudioPrerollBuffers) "
+                + "audioGapFilled=\(String(format: "%.3f", filledAudioGap.seconds))s "
                 + "error=\(error?.localizedDescription ?? "none")"
         )
 

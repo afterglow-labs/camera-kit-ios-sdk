@@ -111,6 +111,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     private var prefetchTasksByGroupID: [String: LensPrefetcherTask] = [:]
     private var prefetchedLensesByGroupID: [String: [Lens]] = [:]
     private let configuredExternalInput: Input?
+    private let microphoneAudioRouter: MicrophoneAudioRouter
     private var cameraKitStarted = false
 
     /// The CameraKit session
@@ -417,7 +418,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     ) {
         self.cameraKit = cameraKit
         self.captureSession = captureSession
-        configuredExternalInput = externalInput.map(ExternalInputCompatibilityAdapter.init(source:))
+        let microphoneAudioRouter = MicrophoneAudioRouter(cameraKit: cameraKit)
+        self.microphoneAudioRouter = microphoneAudioRouter
+        configuredExternalInput = externalInput.map {
+            ExternalInputCompatibilityAdapter(source: $0, microphoneAudioHandler: microphoneAudioRouter.deliver)
+        }
         self.cameraPosition = cameraPosition
         super.init()
         lensLaunchDataOverrides["afterglow_nose_session_id"] = noseAdjustmentsControlSessionID
@@ -490,7 +495,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             }
             if let recorder {
                 recorder.finishRecording(completion: nil)
-                cameraKit.remove(output: recorder.output)
+                remove(output: recorder.output)
                 self.recorder = nil
             }
             deactivateRecordingResolutionOutput()
@@ -566,7 +571,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         let dataProvider = configureDataProvider()
         // Create CameraKit inputs off the main thread. AVSessionInput may touch AVCaptureSession internals
         // during initialization, and AVCaptureSession startRunning must not happen on the main thread.
-        let input = configuredExternalInput ?? AVSessionInput(session: captureSession)
+        let input = makeCameraInput()
         let arInput = ARSessionInput()
 
         // Start the actual CameraKit session. Once the session is started, CameraKit will begin processing frames and
@@ -600,6 +605,46 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
             self?.refreshHighDefinitionLensRendering()
             self?.applyPreferredToneMapAdjustment()
             self?.applyPreferredPortraitAdjustment()
+        }
+    }
+
+    // MARK: Outputs and Microphone Audio
+
+    /// Adds an output to Camera Kit and also delivers live microphone audio to it.
+    ///
+    /// Live microphone audio does not pass through Camera Kit: inside it every buffer waits for the Lens
+    /// engine, and audio that waits too long is dropped by the capture system. An output that needs the
+    /// microphone, such as a recorder or a stream, must be added here rather than with
+    /// `cameraKit.add(output:)`, which would give it video only.
+    open func add(output: Output) {
+        cameraKit.add(output: output)
+        microphoneAudioRouter.add(output)
+    }
+
+    /// Removes an output added with `add(output:)`.
+    open func remove(output: Output) {
+        microphoneAudioRouter.remove(output)
+        cameraKit.remove(output: output)
+    }
+
+    /// The input handed to Camera Kit. The built-in camera and a caller-supplied input both sit behind an
+    /// adapter that sends their microphone audio to the outputs directly instead of into Camera Kit.
+    func makeCameraInput() -> Input {
+        configuredExternalInput ?? ExternalInputCompatibilityAdapter(
+            source: AVSessionInput(session: captureSession),
+            microphoneAudioHandler: microphoneAudioRouter.deliver
+        )
+    }
+
+    /// Swaps the active recorder, which takes video from Camera Kit and live microphone audio directly.
+    func replaceRecorder(with newRecorder: Recorder?) {
+        if let old = recorder {
+            old.finishRecording(completion: nil)
+            remove(output: old.output)
+        }
+        recorder = newRecorder
+        if let newRecorder {
+            add(output: newRecorder.output)
         }
     }
 
@@ -861,24 +906,18 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     private func configureRecorder(using configuration: RecordingConfiguration) {
-        if let old = recorder {
-            old.finishRecording(completion: nil)
-            cameraKit.remove(output: old.output)
-        }
-
+        let newRecorder: Recorder?
         do {
-            recorder = try Recorder(
+            newRecorder = try Recorder(
                 url: URL(fileURLWithPath: "\(NSTemporaryDirectory())\(UUID().uuidString).mp4"),
                 orientation: cameraKit.activeInput.frameOrientation,
                 configuration: configuration
             )
         } catch {
-            recorder = nil
+            newRecorder = nil
             print("[CameraKit Recorder] configuration failed: \(error.localizedDescription)")
         }
-        if let recorder {
-            cameraKit.add(output: recorder.output)
-        }
+        replaceRecorder(with: newRecorder)
     }
 
     /// Begin recording video.
@@ -928,7 +967,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 completion?(url, error)
             }
         }
-        cameraKit.remove(output: recorder.output)
+        remove(output: recorder.output)
         deactivateRecordingResolutionOutput()
         captureSessionQueue.async { [weak self] in
             guard let device = self?.cameraInputDevice else { return }
