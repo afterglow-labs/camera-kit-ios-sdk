@@ -75,7 +75,8 @@ open class CameraView: UIView {
             }
             housing.removeFromSuperview()
             if captureButtonsInToolbar {
-                stack.insertArrangedSubview(housing, at: toolbarAtTop ? 0 : stack.arrangedSubviews.count)
+                // The first row belongs to the expandable numbered lens group.
+                stack.insertArrangedSubview(housing, at: toolbarAtTop ? 1 : stack.arrangedSubviews.count)
             } else {
                 captureControlsView.addArrangedSubview(housing)
             }

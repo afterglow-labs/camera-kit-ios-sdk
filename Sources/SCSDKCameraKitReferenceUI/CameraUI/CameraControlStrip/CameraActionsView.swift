@@ -249,12 +249,12 @@ public class CameraActionsView: UIView {
         view.disableAction = { [weak button] in button?.accessibilityValue = "Collapsed" }
 
         let slots = lensButtonActionViews
-        let column = UIStackView(arrangedSubviews: range.map { slots[$0 - 1] })
+        let column = UIStackView(arrangedSubviews: range.reversed().map { slots[$0 - 1] })
         column.axis = .vertical
         column.translatesAutoresizingMaskIntoConstraints = false
         // Show the entire column when it fits. If other controls need the space,
         // only the numbered buttons scroll, so the group toggle stays reachable.
-        let scroll = UIScrollView()
+        let scroll = LensSlotScrollView()
         scroll.contentInsetAdjustmentBehavior = .never
         scroll.scrollsToTop = false
         scroll.addSubview(column)
@@ -270,7 +270,7 @@ public class CameraActionsView: UIView {
             column.widthAnchor.constraint(equalTo: viewport.widthAnchor),
             fullHeight,
         ])
-        view.setExpansionContent(scroll)
+        view.setExpansionAboveToggle(scroll)
         return view
     }
 
@@ -308,7 +308,7 @@ public class CameraActionsView: UIView {
     /// Camera settings stack (flip, flash, tone, portrait, HD), floating at the bottom leading edge.
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView, leftGroup,
+            leftGroup, flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -324,9 +324,7 @@ public class CameraActionsView: UIView {
     /// bottom trailing edge.
     public lazy var lensButtonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            retouchActionView, noseAdjustmentsActionView,
-            rightGroup,
-            lensAudioActionView,
+            rightGroup, retouchActionView, noseAdjustmentsActionView, lensAudioActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -465,8 +463,8 @@ public class CameraActionsView: UIView {
             group.disableAction?()
         }
         viewsToRestore = []
-        let collapsible = Array(buttonStackView.arrangedSubviews.dropFirst()) + lensButtonStackView.arrangedSubviews
-        for subview in collapsible where !subview.isHidden {
+        let collapsible = buttonStackView.arrangedSubviews + lensButtonStackView.arrangedSubviews
+        for subview in collapsible where subview !== flipCameraButton && !subview.isHidden {
             viewsToRestore?.insert(subview)
             subview.alpha = 0
             subview.isHidden = true
@@ -739,5 +737,19 @@ extension CameraActionsView {
         let flipCameraHeightConstraint = flipCameraButton.heightAnchor.constraint(equalToConstant: 40)
         self.flipCameraHeightConstraint = flipCameraHeightConstraint
         NSLayoutConstraint.activate([flipCameraHeightConstraint])
+    }
+}
+
+/// Keep the first slot next to its toggle when an expanded column needs to scroll.
+private final class LensSlotScrollView: UIScrollView {
+    private var lastViewport = CGSize.zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != lastViewport else { return }
+        lastViewport = bounds.size
+        if bounds.height > 0 {
+            contentOffset.y = max(0, contentSize.height - bounds.height)
+        }
     }
 }

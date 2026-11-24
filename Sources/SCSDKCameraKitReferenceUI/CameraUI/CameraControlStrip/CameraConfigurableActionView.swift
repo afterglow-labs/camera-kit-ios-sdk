@@ -75,16 +75,16 @@ public class CameraConfigurableActionView: UIView {
     }()
 
     // An action normally reveals its configuration button. A lens group reveals its
-    // numbered buttons in the same place, directly below the toggle.
+    // numbered buttons above the toggle, inside that same button stack.
     private var customExpansion: UIView?
     private var expansionView: UIView { customExpansion ?? configurationButton }
 
-    func setExpansionContent(_ content: UIView) {
+    func setExpansionAboveToggle(_ content: UIView) {
         customExpansion?.removeFromSuperview()
         customExpansion = content
         configurationButton.isHidden = true
         content.isHidden = !toggleButton.isSelected || !configurable
-        buttonStackView.addArrangedSubview(content)
+        buttonStackView.insertArrangedSubview(content, at: 0)
     }
 
     // MARK: View Configuration
@@ -158,10 +158,21 @@ public class CameraConfigurableActionView: UIView {
     @objc
     private func toggleButtonTapped(sender: UIButton) {
         sender.isSelected.toggle()
-        if sender.isSelected && configurable {
-            expand()
+        let updateExpansion = {
+            if sender.isSelected && self.configurable {
+                self.expand()
+            } else {
+                self.collapse()
+            }
+        }
+        if customExpansion != nil, let container = superview?.superview, !UIAccessibility.isReduceMotionEnabled {
+            container.layoutIfNeeded()
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                updateExpansion()
+                container.layoutIfNeeded()
+            }
         } else {
-            collapse()
+            updateExpansion()
         }
         if sender.isSelected {
             enableAction?()

@@ -598,11 +598,12 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
                 coordinator.captureHosts[isPhoto] = host
             }
             let stack = isPhoto ? view.cameraActionsView.buttonStackView : view.cameraActionsView.lensButtonStackView
-            let isAtCorrectEnd = toolbarAtTop ? stack.arrangedSubviews.first === host.view : stack.arrangedSubviews.last === host.view
+            // Keep the numbered lens group first, including with docked capture buttons.
+            let isAtCorrectEnd = toolbarAtTop ? stack.arrangedSubviews.dropFirst().first === host.view : stack.arrangedSubviews.last === host.view
             if !isAtCorrectEnd {
                 stack.removeArrangedSubview(host.view)
                 host.view.removeFromSuperview()
-                stack.insertArrangedSubview(host.view, at: toolbarAtTop ? 0 : stack.arrangedSubviews.count)
+                stack.insertArrangedSubview(host.view, at: toolbarAtTop ? 1 : stack.arrangedSubviews.count)
             }
             coordinator.captureHeights[isPhoto]?.constant = 56 * metrics.scale
             host.view.isHidden = !captureButtonsInToolbar || !showsCaptureControls
