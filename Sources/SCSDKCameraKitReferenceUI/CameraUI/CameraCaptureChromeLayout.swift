@@ -10,16 +10,16 @@ public enum CameraCaptureChromeLayout {
     public struct Metrics {
         public let scale: CGFloat
 
-        public var photoButtonDiameter: CGFloat { 52 * scale }
-        public var videoButtonDiameter: CGFloat { 58 * scale }
+        public var photoButtonDiameter: CGFloat { 46.8 * scale }
+        public var videoButtonDiameter: CGFloat { 52.2 * scale }
         public var captureControlSpacing: CGFloat { 18 * scale }
         public var captureControlsHeight: CGFloat { 64 * scale }
         public var captureControlsBottomClearance: CGFloat { 116 * scale }
         public var swiftUIFooterBottomPadding: CGFloat { 76 * scale }
 
-        public var photoSymbolSize: CGFloat { 21 * scale }
-        public var recordingStopSymbolSize: CGFloat { 16 * scale }
-        public var captureBorderWidth: CGFloat { 3 * scale }
+        public var photoSymbolSize: CGFloat { 18.9 * scale }
+        public var recordingStopSymbolSize: CGFloat { 14.4 * scale }
+        public var captureBorderWidth: CGFloat { 2.7 * scale }
 
         public var attributionTopOffset: CGFloat { 118 * scale }
         public var attributionTrailingInset: CGFloat { 16 * scale }
@@ -43,7 +43,7 @@ public enum CameraCaptureChromeLayout {
         public var sideControlsEdgeInset: CGFloat { 2 * scale }
         public var sideControlsBottomGap: CGFloat { 4 * scale }
         public var sideControlsSpacing: CGFloat { 4 * scale }
-        public var bottomCarouselHeight: CGFloat { 40 * scale }
+        public var bottomCarouselHeight: CGFloat { 54 * scale }
         public var bottomCarouselBottomGap: CGFloat { 36 * scale }
         public var bottomCarouselMaximumWidth: CGFloat { 300 * scale }
         public var captureControlsCarouselGap: CGFloat { 28 * scale }
@@ -67,8 +67,8 @@ public enum CameraCaptureChromeLayout {
     }
 
     // Baseline aliases retained for source compatibility with host apps.
-    public static let photoButtonDiameter: CGFloat = 52
-    public static let videoButtonDiameter: CGFloat = 58
+    public static let photoButtonDiameter: CGFloat = 46.8
+    public static let videoButtonDiameter: CGFloat = 52.2
     public static let captureControlSpacing: CGFloat = 18
     public static let captureControlsHeight: CGFloat = 64
     public static let attributionFontSize: CGFloat = 9

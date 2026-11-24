@@ -43,6 +43,12 @@ public enum CameraElements: String, TestableElement {
     case noseAdjustmentsToggleButton
     case lensSlotOneToggleButton
     case lensSlotTwoToggleButton
+    case lensSlotThreeToggleButton
+    case lensSlotFourToggleButton
+    case lensSlotFiveToggleButton
+    case lensSlotSixToggleButton
+    case lensSlotSevenToggleButton
+    case lensSlotEightToggleButton
     case lensAudioToggleButton
     case highDefinitionToggleButton
     case ringLightView

@@ -236,7 +236,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
     }
 
     /// The customizable Lens buttons, numbered from 0.
-    public static let lensButtonIndices = 0..<2
+    public static let lensButtonIndices = 0..<20
 
     /// Whether the host app has assigned a Lens to customizable Lens button `index`.
     public func isLensButtonAvailable(at index: Int) -> Bool {
@@ -805,7 +805,11 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
         switchToOfflineInput(input, completion: completion)
     }
 
-    private func switchToOfflineInput(_ input: Input, completion: (() -> Void)?) {
+    /// Posted on the main thread after switching input recreates the Lens processor.
+    public static let offlineInputDidStart = Notification.Name("CameraKitOfflineInputDidStart")
+
+    /// Switches inputs while preserving the configured Lens stack and session providers.
+    public func switchToOfflineInput(_ input: Input, completion: (() -> Void)?) {
         let shouldReapplyLenses = !readLensState { desiredLensStack.applied.isEmpty }
 
         let transition = OfflineInputTransitionCoordinator(queue: captureSessionQueue)
@@ -842,6 +846,7 @@ open class CameraController: NSObject, LensRepositoryGroupObserver, LensPrefetch
                 }
 
                 DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: Self.offlineInputDidStart, object: self.cameraKit)
                     completion?()
                 }
             }

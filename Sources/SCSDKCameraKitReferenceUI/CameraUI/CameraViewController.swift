@@ -403,6 +403,12 @@ private extension CameraViewController {
         }
     }
 
+    @objc private func reconnectLensTouches() {
+        let view = cameraView.previewView
+        cameraController.cameraKit.lenses.processor?.removeTouchHandling(in: view)
+        cameraController.cameraKit.lenses.processor?.configureTouchHandling(in: view, gestureRecognizerDelegate: nil)
+    }
+
     /// Configures the target actions and delegates needed for the view controller to function
     func setupActions() {
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(sender:)))
@@ -415,6 +421,8 @@ private extension CameraViewController {
         let pinchGestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(zoom(sender:)))
         cameraView.previewView.addGestureRecognizer(pinchGestureRecognizer)
         cameraView.previewView.automaticallyConfiguresTouchHandler = true
+        NotificationCenter.default.addObserver(self, selector: #selector(reconnectLensTouches),
+                                              name: CameraController.offlineInputDidStart, object: cameraController.cameraKit)
 
         cameraView.cameraBottomBar.closeButton.addTarget(
             self, action: #selector(closeButtonPressed(_:)), for: .touchUpInside

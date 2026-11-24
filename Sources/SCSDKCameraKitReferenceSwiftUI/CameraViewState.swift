@@ -95,6 +95,7 @@ public class CameraViewState: NSObject, ObservableObject {
 
     /// Top of the bottom camera controls in viewport points; Lens UI is kept above it.
     @Published var lensControlsTop: CGFloat?
+    @Published var lensControlsBottom: CGFloat = 0
 
     /// Whether video recording is currently active.
     @Published var recording = false

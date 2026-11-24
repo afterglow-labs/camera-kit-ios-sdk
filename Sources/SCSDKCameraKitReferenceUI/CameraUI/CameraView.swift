@@ -37,6 +37,52 @@ open class CameraView: UIView {
         }
     }
 
+    public var hostTopInset: CGFloat = 0 {
+        didSet { if oldValue != hostTopInset { setNeedsLayout() } }
+    }
+
+    public var toolbarAtTop = false {
+        didSet {
+            guard oldValue != toolbarAtTop else { return }
+            updateCaptureDock()
+            cameraActionsView.toolbarAtTop = toolbarAtTop
+            setNeedsLayout()
+        }
+    }
+
+    public var captureButtonsInToolbar = false {
+        didSet {
+            guard oldValue != captureButtonsInToolbar else { return }
+            updateCaptureDock()
+            setNeedsLayout()
+        }
+    }
+
+    private let photoHousing = UIView()
+    private let recordHousing = UIView()
+    private let captureSpacer = UIView()
+    private var captureRowWidthConstraint: NSLayoutConstraint?
+    private var captureHousingSizeConstraints: [NSLayoutConstraint] = []
+
+    private func updateCaptureDock() {
+        NSLayoutConstraint.deactivate(bottomCaptureConstraints + topCaptureConstraints + screenTopCaptureConstraints)
+        NSLayoutConstraint.activate(toolbarAtTop ? topCaptureConstraints + screenTopCaptureConstraints : bottomCaptureConstraints)
+        captureRowWidthConstraint?.isActive = false
+        captureSpacer.isHidden = true
+        for (housing, stack) in [(photoHousing, cameraActionsView.buttonStackView), (recordHousing, cameraActionsView.lensButtonStackView)] {
+            if let previousStack = housing.superview as? UIStackView {
+                previousStack.removeArrangedSubview(housing)
+            }
+            housing.removeFromSuperview()
+            if captureButtonsInToolbar {
+                stack.insertArrangedSubview(housing, at: toolbarAtTop ? 0 : stack.arrangedSubviews.count)
+            } else {
+                captureControlsView.addArrangedSubview(housing)
+            }
+        }
+    }
+
+
     /// Outlines the safe area Camera Kit gives Lens UI, with its numbers, to diagnose Lens layout.
     public var showsLensSafeAreaOutline = false {
         didSet {
@@ -139,6 +185,12 @@ open class CameraView: UIView {
     }()
 
     private var cameraActionsBottomConstraint: NSLayoutConstraint?
+    private var cameraActionsTopConstraint: NSLayoutConstraint?
+    private var topCaptureConstraints: [NSLayoutConstraint] = []
+    private var screenTopCaptureConstraints: [NSLayoutConstraint] = []
+    private var captureControlsTopConstraint: NSLayoutConstraint?
+    private var bottomCaptureConstraints: [NSLayoutConstraint] = []
+    private let lensUITopOcclusionView = UIView()
     private var lensLabelTopConstraint: NSLayoutConstraint?
     private var lensTitleFadeWorkItem: DispatchWorkItem?
     private var carouselBottomConstraint: NSLayoutConstraint?
@@ -330,7 +382,7 @@ open class CameraView: UIView {
         rawCameraPreviewView.frame = previewFrame
         previewView.frame = previewFrame
         updateLensUIBottomOcclusion()
-        previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensLabel])
+        previewView.configureSafeArea(with: [lensUIBottomOcclusionView, lensUITopOcclusionView, lensLabel])
         ringLightView.ringLightGradient.updateIntensity(
             to: CGFloat(flashControlView.ringLightIntensityValue), animated: false
         )
@@ -340,31 +392,52 @@ open class CameraView: UIView {
         let metrics = CameraCaptureChromeLayout.metrics(for: bounds.size)
 
         cameraActionsBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom)
+        cameraActionsTopConstraint?.constant = toolbarAtTop ? max(hostTopInset, safeAreaInsets.top) : safeAreaInsets.top
+        captureControlsView.distribution = .fill
+        captureControlsTopConstraint?.constant = max(hostTopInset, safeAreaInsets.top)
+            + metrics.bottomCarouselBottomGap + metrics.bottomCarouselHeight + metrics.captureControlsCarouselGap
+        lensUITopOcclusionView.isHidden = !toolbarAtTop
         lensLabelTopConstraint?.constant = max(contentTopInset, safeAreaInsets.top) + metrics.lensLabelTopInset
         cameraActionsView.apply(scale: metrics.scale)
 
-        carouselBottomConstraint?.constant = -metrics.bottomCarouselBottomGap
+        carouselBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom) - metrics.bottomCarouselBottomGap
         carouselHeightConstraint?.constant = metrics.bottomCarouselHeight
         carouselMaximumWidthConstraint?.constant = metrics.bottomCarouselMaximumWidth
         carouselPreferredWidthConstraint?.constant = metrics.bottomCarouselMaximumWidth
 
-        photoButtonWidthConstraint?.constant = metrics.photoButtonDiameter
-        photoButtonHeightConstraint?.constant = metrics.photoButtonDiameter
-        videoButtonWidthConstraint?.constant = metrics.videoButtonDiameter
-        videoButtonHeightConstraint?.constant = metrics.videoButtonDiameter
+        let photoDiameter = captureButtonsInToolbar ? 32 * metrics.scale : metrics.photoButtonDiameter
+        let videoDiameter = captureButtonsInToolbar ? 32 * metrics.scale : metrics.videoButtonDiameter
+        photoButtonWidthConstraint?.constant = photoDiameter
+        photoButtonHeightConstraint?.constant = photoDiameter
+        videoButtonWidthConstraint?.constant = videoDiameter
+        videoButtonHeightConstraint?.constant = videoDiameter
         captureControlsBottomConstraint?.constant = -metrics.captureControlsCarouselGap
         captureControlsHeightConstraint?.constant = metrics.captureControlsHeight
-        captureControlsView.spacing = metrics.captureControlSpacing
+        captureControlsView.spacing = captureButtonsInToolbar ? 0 : metrics.captureControlSpacing
 
-        photoCaptureButton.layer.cornerRadius = metrics.photoButtonDiameter / 2
+        captureRowWidthConstraint?.constant = -108 * metrics.scale
+        for constraint in captureHousingSizeConstraints {
+            constraint.constant = captureButtonsInToolbar ? (constraint.firstAttribute == .height ? 24 : 8) * metrics.scale : 0
+        }
+        for housing in [photoHousing, recordHousing] {
+            housing.backgroundColor = .clear
+            housing.isHidden = captureControlsView.isHidden
+            housing.alpha = captureControlsView.alpha
+            housing.layer.borderColor = cameraActionsView.appearance.housingBorder?.cgColor
+            housing.layer.borderWidth = 0
+            housing.layer.cornerRadius = 8 * metrics.scale
+            housing.layer.cornerCurve = .continuous
+        }
+
+        photoCaptureButton.layer.cornerRadius = photoDiameter / 2
         photoCaptureButton.layer.borderWidth = metrics.captureBorderWidth
         photoCaptureButton.setImage(
             UIImage(systemName: "camera.fill")?.withConfiguration(
-                UIImage.SymbolConfiguration(pointSize: metrics.photoSymbolSize, weight: .semibold)
+                UIImage.SymbolConfiguration(pointSize: captureButtonsInToolbar ? 15 * metrics.scale : metrics.photoSymbolSize, weight: .semibold)
             ),
             for: .normal
         )
-        videoCaptureButton.layer.cornerRadius = metrics.videoButtonDiameter / 2
+        videoCaptureButton.layer.cornerRadius = videoDiameter / 2
         videoCaptureButton.layer.borderWidth = metrics.captureBorderWidth
         if videoCaptureButton.image(for: .normal) != nil {
             videoCaptureButton.setImage(
@@ -479,10 +552,12 @@ extension CameraView {
         addSubview(cameraActionsView)
         let bottomConstraint = cameraActionsView.bottomAnchor.constraint(equalTo: bottomAnchor)
         cameraActionsBottomConstraint = bottomConstraint
+        let topConstraint = cameraActionsView.topAnchor.constraint(equalTo: topAnchor)
+        cameraActionsTopConstraint = topConstraint
         NSLayoutConstraint.activate([
             cameraActionsView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
             cameraActionsView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            topConstraint,
             bottomConstraint,
         ])
     }
@@ -548,7 +623,7 @@ extension CameraView {
         addSubview(carouselView)
         // Centered between the two side stacks, just above the host chrome.
         let bottomConstraint = carouselView.bottomAnchor.constraint(
-            equalTo: cameraActionsView.bottomAnchor,
+            equalTo: bottomAnchor,
             constant: -8
         )
         let heightConstraint = carouselView.heightAnchor.constraint(equalToConstant: 48)
@@ -581,10 +656,26 @@ extension CameraView {
 
 extension CameraView {
     private func setupCaptureControls() {
-        captureControlsView.addArrangedSubview(photoCaptureButton)
-        captureControlsView.addArrangedSubview(videoCaptureButton)
+        for (housing, button) in [(photoHousing, photoCaptureButton), (recordHousing, videoCaptureButton)] {
+            housing.translatesAutoresizingMaskIntoConstraints = false
+            housing.addSubview(button)
+            let width = housing.widthAnchor.constraint(equalTo: button.widthAnchor)
+            let height = housing.heightAnchor.constraint(equalTo: button.heightAnchor)
+            height.priority = .init(999)
+            captureHousingSizeConstraints += [width, height]
+            NSLayoutConstraint.activate([
+                width, height,
+                button.centerXAnchor.constraint(equalTo: housing.centerXAnchor),
+                button.centerYAnchor.constraint(equalTo: housing.centerYAnchor)
+            ])
+        }
+        captureControlsView.addArrangedSubview(photoHousing)
+        captureControlsView.addArrangedSubview(captureSpacer)
+        captureControlsView.addArrangedSubview(recordHousing)
+        captureSpacer.isHidden = true
         addSubview(captureControlsView)
 
+        captureRowWidthConstraint = captureControlsView.widthAnchor.constraint(equalTo: widthAnchor, constant: -108)
         let photoWidthConstraint = photoCaptureButton.widthAnchor.constraint(equalToConstant: 34)
         let photoHeightConstraint = photoCaptureButton.heightAnchor.constraint(equalToConstant: 34)
         let videoWidthConstraint = videoCaptureButton.widthAnchor.constraint(equalToConstant: 38)
@@ -600,16 +691,21 @@ extension CameraView {
         videoButtonHeightConstraint = videoHeightConstraint
         captureControlsBottomConstraint = bottomConstraint
         captureControlsHeightConstraint = heightConstraint
+        let topConstraint = captureControlsView.topAnchor.constraint(equalTo: topAnchor)
+        captureControlsTopConstraint = topConstraint
+        screenTopCaptureConstraints = [topConstraint, captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor)]
+        bottomCaptureConstraints = [
+            bottomConstraint,
+            captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
+        ]
 
         NSLayoutConstraint.activate([
             photoWidthConstraint,
             photoHeightConstraint,
             videoWidthConstraint,
             videoHeightConstraint,
-            captureControlsView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            bottomConstraint,
             heightConstraint,
-        ])
+        ] + bottomCaptureConstraints)
     }
 
     public func setVideoCaptureButtonRecording(_ isRecording: Bool) {
@@ -628,6 +724,8 @@ extension CameraView {
     private func setupLensUIBottomOcclusionView() {
         lensUIBottomOcclusionView.translatesAutoresizingMaskIntoConstraints = true
         addSubview(lensUIBottomOcclusionView)
+        lensUITopOcclusionView.isUserInteractionEnabled = false
+        addSubview(lensUITopOcclusionView)
     }
 
     /// Lenses may draw UI anywhere above the bottom controls, across the full width.
@@ -641,8 +739,17 @@ extension CameraView {
             carouselView,
             snapAttributionView,
         ]
-        let controlsTop = controls
+        let topControls: [UIView] = [cameraActionsView.buttonStackView, cameraActionsView.lensButtonStackView, captureControlsView]
+        let topControlsBottom = topControls
             .filter { !$0.isHidden && $0.window != nil }
+            .map { convert($0.bounds, from: $0).maxY }
+            .max() ?? hostTopInset
+        lensUITopOcclusionView.frame = CGRect(
+            x: 0, y: 0, width: bounds.width,
+            height: toolbarAtTop ? min(bounds.height, topControlsBottom + metrics.lensUIControlsClearance) : 0
+        )
+        let controlsTop = controls
+            .filter { !$0.isHidden && $0.window != nil && (!toolbarAtTop || !topControls.contains($0)) }
             .map { convert($0.bounds, from: $0).minY }
             .min() ?? (bounds.maxY - max(hostBottomInset, safeAreaInsets.bottom))
         let top = max(bounds.minY, min(bounds.maxY, controlsTop - metrics.lensUIControlsClearance))
@@ -655,8 +762,12 @@ extension CameraView {
 extension CameraView {
     private func setupMediaPicker() {
         addSubview(mediaPickerView)
+        let bottomConstraint = mediaPickerView.bottomAnchor.constraint(equalTo: captureControlsView.topAnchor, constant: -4)
+        let topConstraint = mediaPickerView.topAnchor.constraint(equalTo: cameraActionsView.topAnchor, constant: 4)
+        bottomCaptureConstraints.append(bottomConstraint)
+        topCaptureConstraints.append(topConstraint)
         NSLayoutConstraint.activate([
-            mediaPickerView.bottomAnchor.constraint(equalTo: captureControlsView.topAnchor, constant: -4),
+            bottomConstraint,
             mediaPickerView.centerXAnchor.constraint(equalTo: centerXAnchor),
             mediaPickerView.widthAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.widthAnchor),
         ])

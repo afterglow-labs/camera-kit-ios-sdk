@@ -198,7 +198,86 @@ public class CameraActionsView: UIView {
         identifier: CameraElements.lensSlotTwoToggleButton.id
     )
 
-    /// Mutes or unmutes sound from Lenses; sits under button 2. The microphone is unaffected.
+    /// Customizable Lens slot 3, a persistent Lens layer the user assigns.
+    public lazy var lensSlotThreeActionView = Self.lensSlotActionView(
+        number: 3,
+        identifier: CameraElements.lensSlotThreeToggleButton.id
+    )
+
+    /// Customizable Lens slot 4, a persistent Lens layer the user assigns.
+    public lazy var lensSlotFourActionView = Self.lensSlotActionView(
+        number: 4,
+        identifier: CameraElements.lensSlotFourToggleButton.id
+    )
+
+    public lazy var lensSlotFiveActionView = Self.lensSlotActionView(
+        number: 5,
+        identifier: CameraElements.lensSlotFiveToggleButton.id
+    )
+
+    public lazy var lensSlotSixActionView = Self.lensSlotActionView(
+        number: 6,
+        identifier: CameraElements.lensSlotSixToggleButton.id
+    )
+
+    public lazy var lensSlotSevenActionView = Self.lensSlotActionView(
+        number: 7,
+        identifier: CameraElements.lensSlotSevenToggleButton.id
+    )
+
+    public lazy var lensSlotEightActionView = Self.lensSlotActionView(
+        number: 8,
+        identifier: CameraElements.lensSlotEightToggleButton.id
+    )
+
+    private lazy var extraSlots = (9...20).map {
+        Self.lensSlotActionView(number: $0, identifier: "LensSlot\($0)ToggleButton")
+    }
+    private lazy var rightGroup = makeGroup(1...10)
+    private lazy var leftGroup = makeGroup(11...20)
+    private lazy var rightPanel = makePanel(Array(lensButtonActionViews.prefix(10)))
+    private lazy var leftPanel = makePanel(Array(lensButtonActionViews.suffix(10)))
+
+    private func makeGroup(_ range: ClosedRange<Int>) -> CameraConfigurableActionView {
+        let view = CameraConfigurableActionView()
+        view.configurable = false
+        let label = "\(range.lowerBound)–\(range.upperBound)"
+        let button = view.toggleButton
+        button.setTitle(label, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.accessibilityLabel = "Lens buttons " + label
+        button.accessibilityIdentifier = "lensSlots\(range.lowerBound)To\(range.upperBound)"
+        button.accessibilityValue = "Collapsed"
+        let right = range.lowerBound == 1
+        let setExpanded: (Bool) -> Void = { [weak self, weak button] expanded in
+            guard let self else { return }
+            (right ? self.rightPanel : self.leftPanel).isHidden = !expanded
+            button?.accessibilityValue = expanded ? "Expanded" : "Collapsed"
+            self.setNeedsLayout()
+        }
+        view.enableAction = { setExpanded(true) }
+        view.disableAction = { setExpanded(false) }
+        return view
+    }
+
+    private func makePanel(_ slots: [CameraConfigurableActionView]) -> UIStackView {
+        let panel = UIStackView()
+        panel.axis = .vertical
+        panel.isLayoutMarginsRelativeArrangement = true
+        panel.directionalLayoutMargins = .init(top: 4, leading: 4, bottom: 4, trailing: 4)
+        panel.backgroundColor = appearance.housingTint ?? UIColor.black.withAlphaComponent(0.82)
+        panel.layer.cornerRadius = 8
+        for start in stride(from: 0, to: slots.count, by: 2) {
+            let row = UIStackView(arrangedSubviews: Array(slots[start..<min(start + 2, slots.count)]))
+            row.axis = .horizontal
+            panel.addArrangedSubview(row)
+        }
+        panel.isHidden = true
+        return panel
+    }
+
+    /// Mutes or unmutes sound from Lenses. The microphone is unaffected.
     public lazy var lensAudioActionView: CameraConfigurableActionView = {
         let view = CameraConfigurableActionView()
         view.configurable = false
@@ -232,7 +311,7 @@ public class CameraActionsView: UIView {
     /// Camera settings stack (flip, flash, tone, portrait, HD), floating at the bottom leading edge.
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
+            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView, leftGroup,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -244,19 +323,18 @@ public class CameraActionsView: UIView {
         return stackView
     }()
 
-    /// Lens toggle stack (Retouch, Nose Adjustments, Lens slots 1 and 2, Lens audio), floating at the
+    /// Lens toggle stack (Retouch, Nose Adjustments, Lens slot group, Lens audio), floating at the
     /// bottom trailing edge.
     public lazy var lensButtonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            retouchActionView, noseAdjustmentsActionView, lensSlotOneActionView, lensSlotTwoActionView,
+            retouchActionView, noseAdjustmentsActionView,
+            rightGroup,
             lensAudioActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
         stackView.setCustomSpacing(6, after: retouchActionView)
         stackView.setCustomSpacing(6, after: noseAdjustmentsActionView)
-        stackView.setCustomSpacing(6, after: lensSlotOneActionView)
-        stackView.setCustomSpacing(6, after: lensSlotTwoActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         return stackView
@@ -309,8 +387,15 @@ public class CameraActionsView: UIView {
     private func applyIconTint() {
         let actionViews = [
             flashActionView, toneMapActionView, portraitActionView, retouchActionView,
-            noseAdjustmentsActionView, lensSlotOneActionView, lensSlotTwoActionView, lensAudioActionView,
-        ]
+            noseAdjustmentsActionView, lensAudioActionView, rightGroup, leftGroup,
+        ] + lensButtonActionViews
+        for group in [rightGroup, leftGroup] {
+            group.toggleButton.setTitleColor(appearance.iconTint, for: .normal)
+            group.toggleButton.setTitleColor(appearance.selectedIconTint, for: .selected)
+        }
+        for panel in [rightPanel, leftPanel] {
+            panel.backgroundColor = appearance.housingTint ?? UIColor.black.withAlphaComponent(0.82)
+        }
         for button in [flipCameraButton] + actionViews.flatMap({ [$0.toggleButton, $0.configurationButton] }) {
             button.tintColor = appearance.iconTint
             for (state, color) in [(UIControl.State.normal, appearance.iconTint), (.selected, appearance.selectedIconTint)] {
@@ -336,18 +421,38 @@ public class CameraActionsView: UIView {
         setNeedsLayout()
     }
 
+    /// Anchor both side stacks to the host toolbar's edge.
+    public var toolbarAtTop = false {
+        didSet {
+            guard oldValue != toolbarAtTop else { return }
+            NSLayoutConstraint.deactivate(toolbarAtTop ? bottomDockConstraints : topDockConstraints)
+            NSLayoutConstraint.activate(toolbarAtTop ? topDockConstraints : bottomDockConstraints)
+            setNeedsLayout()
+        }
+    }
+
+    private var topDockConstraints: [NSLayoutConstraint] = []
+    private var bottomDockConstraints: [NSLayoutConstraint] = []
+    private var stackTopConstraints: [NSLayoutConstraint] = []
     private let buttonStackHousingView = UIVisualEffectView()
     private let lensButtonStackHousingView = UIVisualEffectView()
     private var housingOverhangConstraints: [NSLayoutConstraint] = []
     private var housingPaddingConstraints: [NSLayoutConstraint] = []
 
-    /// A see-through fill of the host's chrome color, without blur so the video reads through it. The
-    /// housing's bottom meets the host chrome, so only its top corners are rounded.
+    /// Match the host chrome's theme color on both side toolbars.
     private static func style(_ housing: UIVisualEffectView, tint: UIColor?, border: UIColor?) {
         housing.effect = nil
         housing.contentView.backgroundColor = tint
-        housing.layer.borderColor = border?.cgColor
-        housing.layer.borderWidth = border == nil ? 0 : 1
+        housing.layer.borderWidth = 0
+        let outline = (housing.layer.sublayers?.first { $0.name == "openHousingOutline" } as? CAShapeLayer)
+            ?? CAShapeLayer()
+        outline.name = "openHousingOutline"
+        outline.fillColor = UIColor.clear.cgColor
+        outline.strokeColor = border?.cgColor
+        outline.lineWidth = border == nil ? 0 : 1
+        if outline.superlayer == nil {
+            housing.layer.addSublayer(outline)
+        }
         housing.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         housing.clipsToBounds = true
     }
@@ -359,6 +464,11 @@ public class CameraActionsView: UIView {
 
     /// Hide all camera actions except camera flip while recording.
     public func collapse() {
+        guard viewsToRestore == nil else { return }
+        for group in [rightGroup, leftGroup] {
+            group.toggleButton.isSelected = false
+            group.disableAction?()
+        }
         viewsToRestore = []
         let collapsible = Array(buttonStackView.arrangedSubviews.dropFirst()) + lensButtonStackView.arrangedSubviews
         for subview in collapsible where !subview.isHidden {
@@ -393,6 +503,13 @@ public class CameraActionsView: UIView {
 
     override public func layoutSubviews() {
         super.layoutSubviews()
+        for (group, panel, right) in [(rightGroup, rightPanel, true), (leftGroup, leftPanel, false)] where !panel.isHidden {
+            let anchor = group.convert(group.bounds, to: self)
+            let size = panel.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+            let x = right ? anchor.minX - size.width - 6 : anchor.maxX + 6
+            let y = max(bounds.minY, min(anchor.midY - size.height / 2, bounds.maxY - size.height))
+            panel.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+        }
         for button in buttonStackView.arrangedSubviews.compactMap({ $0 as? UIButton }) {
             button.applyCameraActionButtonShadow(scale: layoutScale, outline: appearance.iconOutline)
         }
@@ -402,6 +519,28 @@ public class CameraActionsView: UIView {
             (lensButtonStackHousingView, lensButtonStackView),
         ] {
             housing.isHidden = appearance.housingTint == nil || stack.arrangedSubviews.allSatisfy(\.isHidden)
+            // Leave the bottom open where this housing joins the host's bottom toolbar.
+            if let outline = housing.layer.sublayers?.first(where: { $0.name == "openHousingOutline" }) as? CAShapeLayer {
+                outline.frame = housing.bounds
+                let rect = housing.bounds.insetBy(dx: 0.5, dy: 0.5)
+                let radius = min(housing.layer.cornerRadius, rect.width / 2, rect.height / 2)
+                let path = UIBezierPath()
+                path.move(to: CGPoint(x: rect.minX, y: housing.bounds.maxY))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+                path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.minY),
+                                  controlPoint: CGPoint(x: rect.minX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+                path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+                                  controlPoint: CGPoint(x: rect.maxX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: housing.bounds.maxY))
+                if toolbarAtTop {
+                    path.apply(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: housing.bounds.height))
+                }
+                housing.layer.maskedCorners = toolbarAtTop
+                    ? [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                    : [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+                outline.path = path.cgPath
+            }
         }
     }
 
@@ -423,10 +562,11 @@ public class CameraActionsView: UIView {
         lensButtonStackView.spacing = metrics.sideControlsSpacing
         lensButtonStackView.setCustomSpacing(6 * scale, after: retouchActionView)
         lensButtonStackView.setCustomSpacing(6 * scale, after: noseAdjustmentsActionView)
-        lensButtonStackView.setCustomSpacing(6 * scale, after: lensSlotOneActionView)
+
         stackEdgeConstraints.forEach { $0.constant = $0.firstAttribute == .leading
             ? metrics.sideControlsEdgeInset : -metrics.sideControlsEdgeInset }
         stackBottomConstraints.forEach { $0.constant = -metrics.sideControlsBottomGap }
+        stackTopConstraints.forEach { $0.constant = metrics.sideControlsBottomGap }
         stackWidthConstraints.forEach { $0.constant = 40 * scale }
         housingOverhangConstraints.forEach { $0.constant = ($0.constant < 0 ? -32 : 32) * scale }
         buttonStackHousingView.layer.cornerRadius = 8 * scale
@@ -440,11 +580,8 @@ public class CameraActionsView: UIView {
             portraitActionView,
             retouchActionView,
             noseAdjustmentsActionView,
-            lensSlotOneActionView,
-            lensSlotTwoActionView,
-            lensAudioActionView,
-            highDefinitionActionView,
-        ] {
+            leftGroup, rightGroup, lensAudioActionView, highDefinitionActionView,
+        ] + lensButtonActionViews {
             actionView.apply(scale: scale)
         }
     }
@@ -455,10 +592,10 @@ public class CameraActionsView: UIView {
     public static let emptyLensButtonHint = "Assign a Lens in Settings ▸ Lenses, or hold the search button."
 
     private var lensButtonActionViews: [CameraConfigurableActionView] {
-        [lensSlotOneActionView, lensSlotTwoActionView]
+        [lensSlotOneActionView, lensSlotTwoActionView, lensSlotThreeActionView, lensSlotFourActionView, lensSlotFiveActionView, lensSlotSixActionView, lensSlotSevenActionView, lensSlotEightActionView] + extraSlots
     }
 
-    /// Connects buttons 1 and 2 and the Lens audio button to `controller`. Buttons 1 and 2 switch their
+    /// Connects buttons 1 through 20 and the Lens audio button to `controller`. Lens buttons switch their
     /// assigned Lens layer on or off, and an empty one shows `emptyLensButtonHint` through `showHint`.
     public func connectLensButtons(to controller: CameraController, showHint: @escaping (String) -> Void) {
         lensAudioActionView.enableAction = { [weak controller] in
@@ -558,22 +695,36 @@ extension CameraActionsView {
         }
         addSubview(buttonStackView)
         addSubview(lensButtonStackView)
+        addSubview(rightPanel)
+        addSubview(leftPanel)
         // Each housing runs off its screen edge and ends at this view's bottom, where the host's
         // bottom chrome begins, so it reads as that chrome rising behind the buttons.
         housingOverhangConstraints = [
             buttonStackHousingView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -32),
             lensButtonStackHousingView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 32),
         ]
-        housingPaddingConstraints = [
-            buttonStackHousingView.trailingAnchor.constraint(equalTo: buttonStackView.trailingAnchor, constant: 6),
+        let bottomHousingPadding = [
             buttonStackHousingView.topAnchor.constraint(equalTo: buttonStackView.topAnchor, constant: -6),
-            lensButtonStackHousingView.leadingAnchor.constraint(equalTo: lensButtonStackView.leadingAnchor, constant: -6),
             lensButtonStackHousingView.topAnchor.constraint(equalTo: lensButtonStackView.topAnchor, constant: -6),
         ]
-        NSLayoutConstraint.activate(housingOverhangConstraints + housingPaddingConstraints + [
+        let topHousingPadding = [
+            buttonStackHousingView.bottomAnchor.constraint(equalTo: buttonStackView.bottomAnchor, constant: 6),
+            lensButtonStackHousingView.bottomAnchor.constraint(equalTo: lensButtonStackView.bottomAnchor, constant: 6),
+        ]
+        let horizontalHousingPadding = [
+            buttonStackHousingView.trailingAnchor.constraint(equalTo: buttonStackView.trailingAnchor, constant: 6),
+            lensButtonStackHousingView.leadingAnchor.constraint(equalTo: lensButtonStackView.leadingAnchor, constant: -6),
+        ]
+        housingPaddingConstraints = horizontalHousingPadding + bottomHousingPadding + topHousingPadding
+        bottomDockConstraints = bottomHousingPadding + [
             buttonStackHousingView.bottomAnchor.constraint(equalTo: bottomAnchor),
             lensButtonStackHousingView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        ]
+        topDockConstraints = topHousingPadding + [
+            buttonStackHousingView.topAnchor.constraint(equalTo: topAnchor),
+            lensButtonStackHousingView.topAnchor.constraint(equalTo: topAnchor),
+        ]
+        NSLayoutConstraint.activate(housingOverhangConstraints + horizontalHousingPadding)
         stackEdgeConstraints = [
             buttonStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             lensButtonStackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
@@ -586,10 +737,19 @@ extension CameraActionsView {
             buttonStackView.widthAnchor.constraint(equalToConstant: 40),
             lensButtonStackView.widthAnchor.constraint(equalToConstant: 40),
         ]
-        NSLayoutConstraint.activate(stackEdgeConstraints + stackBottomConstraints + stackWidthConstraints + [
+        stackTopConstraints = [
+            buttonStackView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            lensButtonStackView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+        ]
+        bottomDockConstraints += stackBottomConstraints + [
             buttonStackView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor),
             lensButtonStackView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor),
-        ])
+        ]
+        topDockConstraints += stackTopConstraints + [
+            buttonStackView.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
+            lensButtonStackView.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(stackEdgeConstraints + stackWidthConstraints + bottomDockConstraints)
         let flipCameraHeightConstraint = flipCameraButton.heightAnchor.constraint(equalToConstant: 40)
         self.flipCameraHeightConstraint = flipCameraHeightConstraint
         NSLayoutConstraint.activate([flipCameraHeightConstraint])

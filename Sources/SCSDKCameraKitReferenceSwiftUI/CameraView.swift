@@ -51,6 +51,9 @@ public struct CameraView: View {
     private let onVideoRecorded: ((URL) -> Void)?
     private let onPhotoCaptured: ((UIImage) -> Void)?
     private let hostBottomInset: CGFloat
+    private let hostTopInset: CGFloat
+    private let toolbarAtTop: Bool
+    private let captureButtonsInToolbar: Bool
     private let contentTopInset: CGFloat
     private let showsSnapAttribution: Bool
     private let sideControlsAppearance: CameraActionsView.Appearance
@@ -72,6 +75,9 @@ public struct CameraView: View {
         onPhotoCaptured: ((UIImage) -> Void)? = nil,
         onChromeHiddenChange: ((Bool) -> Void)? = nil,
         hostBottomInset: CGFloat = 0,
+        hostTopInset: CGFloat = 0,
+        toolbarAtTop: Bool = false,
+        captureButtonsInToolbar: Bool = false,
         contentTopInset: CGFloat = 0,
         showsSnapAttribution: Bool = true,
         sideControlsAppearance: CameraActionsView.Appearance = .standard
@@ -92,6 +98,9 @@ public struct CameraView: View {
         self.onPhotoCaptured = onPhotoCaptured
         self.onChromeHiddenChange = onChromeHiddenChange
         self.hostBottomInset = hostBottomInset
+        self.hostTopInset = hostTopInset
+        self.toolbarAtTop = toolbarAtTop
+        self.captureButtonsInToolbar = captureButtonsInToolbar
         self.contentTopInset = contentTopInset
         self.showsSnapAttribution = showsSnapAttribution
         self.sideControlsAppearance = sideControlsAppearance
@@ -126,6 +135,12 @@ public struct CameraView: View {
                         cameraController: cameraController,
                         metrics: metrics,
                         hostBottomInset: hostBottomInset,
+                        hostTopInset: hostTopInset,
+                        toolbarAtTop: toolbarAtTop,
+                        captureButtonsInToolbar: captureButtonsInToolbar,
+                        showsCaptureControls: captureChromeVisible,
+                        onVideoRecorded: onVideoRecorded,
+                        onPhotoCaptured: onPhotoCaptured,
                         sideControlsAppearance: sideControlsAppearance
                     )
                     .frame(width: viewportSize.width, height: viewportSize.height)
@@ -145,10 +160,24 @@ public struct CameraView: View {
                     }
                     .edgesIgnoringSafeArea(.top)
                     .transition(.opacity)
-                    // Capture row sits directly above the carousel, which rests just above the host chrome.
+                    if toolbarAtTop {
+                        VStack(spacing: 0) {
+                            Color.clear.frame(height: hostTopInset + 4 * metrics.scale)
+                            MediaPickerView(provider: cameraController.lensMediaProvider)
+                            Spacer(minLength: 0)
+                        }
+                        .edgesIgnoringSafeArea(.all)
+                    }
+                    // Keep the capture row independent of the media picker's reserved height.
                     VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        MediaPickerView(provider: cameraController.lensMediaProvider)
+                        if toolbarAtTop {
+                            Color.clear.frame(height: hostTopInset + metrics.bottomCarouselBottomGap + metrics.bottomCarouselHeight + metrics.captureControlsCarouselGap)
+                        }
+                        if !toolbarAtTop { Spacer(minLength: 0) }
+                        if !toolbarAtTop {
+                            MediaPickerView(provider: cameraController.lensMediaProvider)
+                        }
+                        if !captureButtonsInToolbar {
                         LensFooter(
                             state: state,
                             cameraController: cameraController,
@@ -157,7 +186,9 @@ public struct CameraView: View {
                             metrics: metrics,
                             showingSnapAttribution: showsSnapAttribution && state.showingSnapAttribution
                         )
-                        Color.clear.frame(height: footerBottomOffset)
+                        }
+                        if !toolbarAtTop { Color.clear.frame(height: footerBottomOffset) }
+                        if toolbarAtTop { Spacer(minLength: 0) }
                     }
                     .frame(width: viewportSize.width)
                     .edgesIgnoringSafeArea(.bottom)
@@ -260,6 +291,7 @@ private struct PreviewLayer: View {
                 PreviewView(
                     cameraKit: cameraController.cameraKit,
                     bottomSafeAreaInset: lensUIBottomInset,
+                    topSafeAreaInset: max(0, state.lensControlsBottom + lensUIClearance - (proxy.size.height - previewSize.height) / 2),
                     outputEnabled: presentation.attachesLensOutput
                 )
                     .frame(width: previewSize.width, height: previewSize.height)
@@ -493,6 +525,12 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     let cameraController: CameraController
     let metrics: CameraCaptureChromeLayout.Metrics
     let hostBottomInset: CGFloat
+    let hostTopInset: CGFloat
+    let toolbarAtTop: Bool
+    let captureButtonsInToolbar: Bool
+    let showsCaptureControls: Bool
+    let onVideoRecorded: ((URL) -> Void)?
+    let onPhotoCaptured: ((UIImage) -> Void)?
     let sideControlsAppearance: CameraActionsView.Appearance
 
     func makeCoordinator() -> Coordinator {
@@ -503,10 +541,15 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         let view = InclusiveCameraControlsView()
         context.coordinator.controlsView = view
         view.configure(cameraController: cameraController, coordinator: context.coordinator)
+        view.onControlsBottomChange = { [weak state] bottom in
+            guard state?.lensControlsBottom != bottom else { return }
+            DispatchQueue.main.async { state?.lensControlsBottom = bottom }
+        }
         view.onControlsTopChange = { [weak state] top in
             DispatchQueue.main.async { state?.lensControlsTop = top }
         }
-        view.apply(metrics: metrics, hostBottomInset: hostBottomInset)
+        view.apply(metrics: metrics, hostBottomInset: hostBottomInset, hostTopInset: hostTopInset, toolbarAtTop: toolbarAtTop)
+        updateCaptureControls(in: view, coordinator: context.coordinator)
         view.cameraActionsView.appearance = sideControlsAppearance
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
@@ -519,7 +562,8 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
-        uiView.apply(metrics: metrics, hostBottomInset: hostBottomInset)
+        uiView.apply(metrics: metrics, hostBottomInset: hostBottomInset, hostTopInset: hostTopInset, toolbarAtTop: toolbarAtTop)
+        updateCaptureControls(in: uiView, coordinator: context.coordinator)
         uiView.cameraActionsView.appearance = sideControlsAppearance
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
@@ -532,7 +576,42 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         uiView.syncControlState(with: cameraController)
     }
 
+    private func updateCaptureControls(in view: InclusiveCameraControlsView, coordinator: Coordinator) {
+        for isPhoto in [true, false] {
+            let footer = LensFooter(
+                state: state, cameraController: cameraController,
+                onVideoRecorded: onVideoRecorded, onPhotoCaptured: onPhotoCaptured,
+                metrics: metrics, showingSnapAttribution: false, photoOnly: isPhoto
+            )
+            let host: UIHostingController<LensFooter>
+            if let existing = coordinator.captureHosts[isPhoto] {
+                host = existing
+                host.rootView = footer
+            } else {
+                host = UIHostingController(rootView: footer)
+                host.view.backgroundColor = .clear
+                host.view.translatesAutoresizingMaskIntoConstraints = false
+                let height = host.view.heightAnchor.constraint(equalToConstant: 56 * metrics.scale)
+                height.priority = .init(999)
+                height.isActive = true
+                coordinator.captureHeights[isPhoto] = height
+                coordinator.captureHosts[isPhoto] = host
+            }
+            let stack = isPhoto ? view.cameraActionsView.buttonStackView : view.cameraActionsView.lensButtonStackView
+            let isAtCorrectEnd = toolbarAtTop ? stack.arrangedSubviews.first === host.view : stack.arrangedSubviews.last === host.view
+            if !isAtCorrectEnd {
+                stack.removeArrangedSubview(host.view)
+                host.view.removeFromSuperview()
+                stack.insertArrangedSubview(host.view, at: toolbarAtTop ? 0 : stack.arrangedSubviews.count)
+            }
+            coordinator.captureHeights[isPhoto]?.constant = 56 * metrics.scale
+            host.view.isHidden = !captureButtonsInToolbar || !showsCaptureControls
+        }
+    }
+
     final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
+        var captureHosts: [Bool: UIHostingController<LensFooter>] = [:]
+        var captureHeights: [Bool: NSLayoutConstraint] = [:]
         let state: CameraViewState
         let cameraController: CameraController
         weak var controlsView: InclusiveCameraControlsView?
@@ -587,12 +666,16 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 private final class InclusiveCameraControlsView: UIView {
     let cameraActionsView = CameraActionsView()
     private var cameraActionsBottomConstraint: NSLayoutConstraint?
+    private var cameraActionsTopConstraint: NSLayoutConstraint?
+    private var toolbarAtTop = false
+    private var hostTopInset: CGFloat = 0
     private var controlSpacingConstraints: [NSLayoutConstraint] = []
     private var metrics = CameraCaptureChromeLayout.metrics(for: CameraCaptureChromeLayout.iPhone16ProViewport)
     private var hostBottomInset: CGFloat = 0
     private var reportedControlsTop: CGFloat?
     /// Reports the top of the bottom controls (side stacks or the capture row and carousel, whichever is higher).
     var onControlsTopChange: ((CGFloat) -> Void)?
+    var onControlsBottomChange: ((CGFloat) -> Void)?
     let flashControlView = FlashControlView()
     let flashControlDismissalHint = UILabel.controlDismissalHint()
     let toneMapControlView: AdjustmentControlView = {
@@ -626,9 +709,13 @@ private final class InclusiveCameraControlsView: UIView {
         setup()
     }
 
-    func apply(metrics: CameraCaptureChromeLayout.Metrics, hostBottomInset: CGFloat) {
+    func apply(metrics: CameraCaptureChromeLayout.Metrics, hostBottomInset: CGFloat, hostTopInset: CGFloat, toolbarAtTop: Bool) {
         self.metrics = metrics
         self.hostBottomInset = hostBottomInset
+        self.hostTopInset = hostTopInset
+        self.toolbarAtTop = toolbarAtTop
+        cameraActionsView.toolbarAtTop = toolbarAtTop
+        cameraActionsTopConstraint?.constant = toolbarAtTop ? max(hostTopInset, safeAreaInsets.top) : safeAreaInsets.top
         cameraActionsBottomConstraint?.constant = -max(hostBottomInset, safeAreaInsets.bottom)
         controlSpacingConstraints.forEach { $0.constant = 8 * metrics.scale }
         cameraActionsView.apply(scale: metrics.scale)
@@ -650,7 +737,12 @@ private final class InclusiveCameraControlsView: UIView {
         let stackTops = [cameraActionsView.buttonStackView, cameraActionsView.lensButtonStackView]
             .filter { !$0.isHidden && $0.frame.height > 0 }
             .map { convert($0.bounds, from: $0).minY }
-        let top = (stackTops + [footerTop]).min() ?? footerTop
+        let top = toolbarAtTop
+            ? controlsBottom - metrics.bottomCarouselBottomGap - metrics.bottomCarouselHeight
+            : (stackTops + [footerTop]).min() ?? footerTop
+        let bottom = toolbarAtTop ? [cameraActionsView.buttonStackView, cameraActionsView.lensButtonStackView]
+            .map { convert($0.bounds, from: $0).maxY }.max() ?? hostTopInset : 0
+        onControlsBottomChange?(bottom)
         guard top.isFinite, reportedControlsTop.map({ abs($0 - top) > 0.5 }) ?? true else { return }
         reportedControlsTop = top
         onControlsTopChange?(top)
@@ -850,12 +942,14 @@ private final class InclusiveCameraControlsView: UIView {
             constant: 8
         )
         cameraActionsBottomConstraint = bottomConstraint
+        let topConstraint = cameraActionsView.topAnchor.constraint(equalTo: topAnchor)
+        cameraActionsTopConstraint = topConstraint
         controlSpacingConstraints = [flashSpacingConstraint, toneSpacingConstraint, portraitSpacingConstraint]
 
         NSLayoutConstraint.activate([
             cameraActionsView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
             cameraActionsView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-            cameraActionsView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            topConstraint,
             bottomConstraint,
 
             flashSpacingConstraint,
@@ -989,16 +1083,19 @@ struct LensFooter: View {
 
     /// Whether the "Powered by Snap" attribution is shown beside the record button.
     let showingSnapAttribution: Bool
+    var photoOnly: Bool? = nil
+    private var compact: Bool { photoOnly != nil }
 
     var body: some View {
         HStack(spacing: metrics.captureControlSpacing) {
+            if photoOnly != false {
                 Button(action: takePhoto) {
                     Image(systemName: "camera.fill")
-                        .font(.system(size: metrics.photoSymbolSize, weight: .semibold))
+                        .font(.system(size: compact ? 15 * metrics.scale : metrics.photoSymbolSize, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(
-                            width: metrics.photoButtonDiameter,
-                            height: metrics.photoButtonDiameter
+                            width: compact ? 32 * metrics.scale : metrics.photoButtonDiameter,
+                            height: compact ? 32 * metrics.scale : metrics.photoButtonDiameter
                         )
                         .background(Color.black.opacity(0.42))
                         .clipShape(Circle())
@@ -1011,13 +1108,14 @@ struct LensFooter: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Take photo")
-
+            }
+            if photoOnly != true {
                 Button(action: toggleRecording) {
                     Circle()
                         .fill(state.recording ? Color.red.opacity(0.72) : Color.red)
                         .frame(
-                            width: metrics.videoButtonDiameter,
-                            height: metrics.videoButtonDiameter
+                            width: compact ? 32 * metrics.scale : metrics.videoButtonDiameter,
+                            height: compact ? 32 * metrics.scale : metrics.videoButtonDiameter
                         )
                         .overlay(
                             Circle()
@@ -1041,8 +1139,9 @@ struct LensFooter: View {
                 .accessibilityLabel(
                     state.recordingFinalizing ? "Finishing recording" : (state.recording ? "Stop recording" : "Start recording")
                 )
+            }
         }
-        .frame(height: metrics.captureControlsHeight)
+        .frame(height: compact ? 56 * metrics.scale : metrics.captureControlsHeight)
         .overlay(alignment: .bottomTrailing) {
             if showingSnapAttribution {
                 // A zero-width anchor on the row's trailing edge lets the attribution extend

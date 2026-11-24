@@ -1,6 +1,7 @@
 //  Copyright Snap Inc. All rights reserved.
 
 import SCSDKCameraKit
+import SCSDKCameraKitReferenceUI
 import SwiftUI
 import UIKit
 
@@ -9,6 +10,7 @@ public struct PreviewView: UIViewRepresentable {
     private let cameraKit: CameraKitProtocol
     private let automaticallyConfiguresTouchHandler: Bool
     private let bottomSafeAreaInset: CGFloat
+    private let topSafeAreaInset: CGFloat
     private let outputEnabled: Bool
 
     /// Initializes a preview view and connects it to a CameraKit session as an output
@@ -20,11 +22,13 @@ public struct PreviewView: UIViewRepresentable {
         cameraKit: CameraKitProtocol,
         automaticallyConfiguresTouchHandler: Bool = true,
         bottomSafeAreaInset: CGFloat = 0,
+        topSafeAreaInset: CGFloat = 0,
         outputEnabled: Bool = true
     ) {
         self.cameraKit = cameraKit
         self.automaticallyConfiguresTouchHandler = automaticallyConfiguresTouchHandler
         self.bottomSafeAreaInset = bottomSafeAreaInset
+        self.topSafeAreaInset = topSafeAreaInset
         self.outputEnabled = outputEnabled
     }
 
@@ -33,6 +37,7 @@ public struct PreviewView: UIViewRepresentable {
         inner.contentMode = .aspectFit
         inner.automaticallyConfiguresTouchHandler = automaticallyConfiguresTouchHandler
         inner.bottomSafeAreaInset = bottomSafeAreaInset
+        inner.topSafeAreaInset = topSafeAreaInset
         context.coordinator.setOutputEnabled(outputEnabled, for: inner)
         return inner
     }
@@ -44,6 +49,7 @@ public struct PreviewView: UIViewRepresentable {
     public func updateUIView(_ uiView: SafeAreaPreviewView, context: Context) {
         uiView.contentMode = .aspectFit
         uiView.bottomSafeAreaInset = bottomSafeAreaInset
+        uiView.topSafeAreaInset = topSafeAreaInset
         context.coordinator.setOutputEnabled(outputEnabled, for: uiView)
     }
 
@@ -54,6 +60,10 @@ public struct PreviewView: UIViewRepresentable {
     public final class Coordinator {
         fileprivate let cameraKit: CameraKitProtocol
         private var outputAttached = false
+        private var inputObserver: NSObjectProtocol?
+        deinit {
+            if let inputObserver { NotificationCenter.default.removeObserver(inputObserver) }
+        }
 
         fileprivate init(cameraKit: CameraKitProtocol) {
             self.cameraKit = cameraKit
@@ -64,7 +74,14 @@ public struct PreviewView: UIViewRepresentable {
             outputAttached = enabled
             if enabled {
                 cameraKit.add(output: view)
+                inputObserver = NotificationCenter.default.addObserver(forName: CameraController.offlineInputDidStart, object: cameraKit, queue: .main) { [weak self, weak view] _ in
+                    guard let view, view.automaticallyConfiguresTouchHandler, let processor = self?.cameraKit.lenses.processor else { return }
+                    processor.removeTouchHandling(in: view)
+                    processor.configureTouchHandling(in: view, gestureRecognizerDelegate: nil)
+                }
             } else {
+                if let inputObserver { NotificationCenter.default.removeObserver(inputObserver) }
+                inputObserver = nil
                 cameraKit.remove(output: view)
             }
         }
@@ -79,6 +96,14 @@ public final class SafeAreaPreviewView: SCSDKCameraKit.PreviewView {
         }
     }
 
+    public var topSafeAreaInset: CGFloat = 0 {
+        didSet {
+            guard oldValue != topSafeAreaInset else { return }
+            updateLensSafeAreaIfNeeded(force: true)
+        }
+    }
+
+    private let topOcclusionView = UIView()
     private let bottomOcclusionView = UIView()
     private var lastConfiguredBounds: CGRect = .null
     private var lastConfiguredInset: CGFloat = -1
@@ -102,6 +127,8 @@ public final class SafeAreaPreviewView: SCSDKCameraKit.PreviewView {
         bottomOcclusionView.backgroundColor = .clear
         bottomOcclusionView.isUserInteractionEnabled = false
         addSubview(bottomOcclusionView)
+        topOcclusionView.isUserInteractionEnabled = false
+        addSubview(topOcclusionView)
     }
 
     private func updateLensSafeAreaIfNeeded(force: Bool) {
@@ -119,10 +146,13 @@ public final class SafeAreaPreviewView: SCSDKCameraKit.PreviewView {
                 width: bounds.width,
                 height: min(inset, bounds.height)
             )
-            configureSafeArea(with: [bottomOcclusionView])
+
         } else {
             bottomOcclusionView.isHidden = true
-            configureSafeArea(with: [])
+
         }
+        topOcclusionView.isHidden = topSafeAreaInset <= 0
+        topOcclusionView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: min(max(0, topSafeAreaInset), bounds.height))
+        configureSafeArea(with: [topOcclusionView, bottomOcclusionView].filter { !$0.isHidden })
     }
 }
