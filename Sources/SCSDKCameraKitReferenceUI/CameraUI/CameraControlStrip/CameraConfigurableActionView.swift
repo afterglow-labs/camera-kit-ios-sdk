@@ -74,17 +74,30 @@ public class CameraConfigurableActionView: UIView {
         return stackView
     }()
 
+    // An action normally reveals its configuration button. A lens group reveals its
+    // numbered buttons in the same place, directly below the toggle.
+    private var customExpansion: UIView?
+    private var expansionView: UIView { customExpansion ?? configurationButton }
+
+    func setExpansionContent(_ content: UIView) {
+        customExpansion?.removeFromSuperview()
+        customExpansion = content
+        configurationButton.isHidden = true
+        content.isHidden = !toggleButton.isSelected || !configurable
+        buttonStackView.addArrangedSubview(content)
+    }
+
     // MARK: View Configuration
 
     // Hide the configuration button for the action, along with the blurred background.
     public func collapse() {
-        configurationButton.isHidden = true
+        expansionView.isHidden = true
         blurEffectView.isHidden = true
     }
 
     // Show the configuration button for the action, along with the blurred background.
     public func expand() {
-        configurationButton.isHidden = false
+        expansionView.isHidden = false
         blurEffectView.isHidden = false
     }
 
@@ -145,8 +158,11 @@ public class CameraConfigurableActionView: UIView {
     @objc
     private func toggleButtonTapped(sender: UIButton) {
         sender.isSelected.toggle()
-        configurationButton.isHidden = !sender.isSelected || !configurable
-        blurEffectView.isHidden = !sender.isSelected || !configurable
+        if sender.isSelected && configurable {
+            expand()
+        } else {
+            collapse()
+        }
         if sender.isSelected {
             enableAction?()
             if configurable {

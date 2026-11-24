@@ -235,12 +235,8 @@ public class CameraActionsView: UIView {
     }
     private lazy var rightGroup = makeGroup(1...10)
     private lazy var leftGroup = makeGroup(11...20)
-    private lazy var rightPanel = makePanel(Array(lensButtonActionViews.prefix(10)))
-    private lazy var leftPanel = makePanel(Array(lensButtonActionViews.suffix(10)))
-
     private func makeGroup(_ range: ClosedRange<Int>) -> CameraConfigurableActionView {
         let view = CameraConfigurableActionView()
-        view.configurable = false
         let label = "\(range.lowerBound)–\(range.upperBound)"
         let button = view.toggleButton
         button.setTitle(label, for: .normal)
@@ -249,32 +245,33 @@ public class CameraActionsView: UIView {
         button.accessibilityLabel = "Lens buttons " + label
         button.accessibilityIdentifier = "lensSlots\(range.lowerBound)To\(range.upperBound)"
         button.accessibilityValue = "Collapsed"
-        let right = range.lowerBound == 1
-        let setExpanded: (Bool) -> Void = { [weak self, weak button] expanded in
-            guard let self else { return }
-            (right ? self.rightPanel : self.leftPanel).isHidden = !expanded
-            button?.accessibilityValue = expanded ? "Expanded" : "Collapsed"
-            self.setNeedsLayout()
-        }
-        view.enableAction = { setExpanded(true) }
-        view.disableAction = { setExpanded(false) }
-        return view
-    }
+        view.enableAction = { [weak button] in button?.accessibilityValue = "Expanded" }
+        view.disableAction = { [weak button] in button?.accessibilityValue = "Collapsed" }
 
-    private func makePanel(_ slots: [CameraConfigurableActionView]) -> UIStackView {
-        let panel = UIStackView()
-        panel.axis = .vertical
-        panel.isLayoutMarginsRelativeArrangement = true
-        panel.directionalLayoutMargins = .init(top: 4, leading: 4, bottom: 4, trailing: 4)
-        panel.backgroundColor = appearance.housingTint ?? UIColor.black.withAlphaComponent(0.82)
-        panel.layer.cornerRadius = 8
-        for start in stride(from: 0, to: slots.count, by: 2) {
-            let row = UIStackView(arrangedSubviews: Array(slots[start..<min(start + 2, slots.count)]))
-            row.axis = .horizontal
-            panel.addArrangedSubview(row)
-        }
-        panel.isHidden = true
-        return panel
+        let slots = lensButtonActionViews
+        let column = UIStackView(arrangedSubviews: range.map { slots[$0 - 1] })
+        column.axis = .vertical
+        column.translatesAutoresizingMaskIntoConstraints = false
+        // Show the entire column when it fits. If other controls need the space,
+        // only the numbered buttons scroll, so the group toggle stays reachable.
+        let scroll = UIScrollView()
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.scrollsToTop = false
+        scroll.addSubview(column)
+        let content = scroll.contentLayoutGuide
+        let viewport = scroll.frameLayoutGuide
+        let fullHeight = viewport.heightAnchor.constraint(equalTo: column.heightAnchor)
+        fullHeight.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            column.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            column.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            column.topAnchor.constraint(equalTo: content.topAnchor),
+            column.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            column.widthAnchor.constraint(equalTo: viewport.widthAnchor),
+            fullHeight,
+        ])
+        view.setExpansionContent(scroll)
+        return view
     }
 
     /// Mutes or unmutes sound from Lenses. The microphone is unaffected.
@@ -393,9 +390,6 @@ public class CameraActionsView: UIView {
             group.toggleButton.setTitleColor(appearance.iconTint, for: .normal)
             group.toggleButton.setTitleColor(appearance.selectedIconTint, for: .selected)
         }
-        for panel in [rightPanel, leftPanel] {
-            panel.backgroundColor = appearance.housingTint ?? UIColor.black.withAlphaComponent(0.82)
-        }
         for button in [flipCameraButton] + actionViews.flatMap({ [$0.toggleButton, $0.configurationButton] }) {
             button.tintColor = appearance.iconTint
             for (state, color) in [(UIControl.State.normal, appearance.iconTint), (.selected, appearance.selectedIconTint)] {
@@ -467,6 +461,7 @@ public class CameraActionsView: UIView {
         guard viewsToRestore == nil else { return }
         for group in [rightGroup, leftGroup] {
             group.toggleButton.isSelected = false
+            group.collapse()
             group.disableAction?()
         }
         viewsToRestore = []
@@ -503,18 +498,6 @@ public class CameraActionsView: UIView {
 
     override public func layoutSubviews() {
         super.layoutSubviews()
-        for (group, panel, right) in [(rightGroup, rightPanel, true), (leftGroup, leftPanel, false)] where !panel.isHidden {
-            let anchor = group.convert(group.bounds, to: self)
-            let size = panel.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
-            let x = right ? anchor.minX - size.width - 6 : anchor.maxX + 6
-            // Keep numbered buttons above the capture controls when docked at the bottom,
-            // or below the side stacks when the toolbar is docked at the top.
-            let stackEdge = toolbarAtTop
-                ? max(buttonStackView.frame.maxY, lensButtonStackView.frame.maxY) + 6
-                : min(buttonStackView.frame.minY, lensButtonStackView.frame.minY) - size.height - 6
-            let y = max(bounds.minY, min(stackEdge, bounds.maxY - size.height))
-            panel.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
-        }
         for button in buttonStackView.arrangedSubviews.compactMap({ $0 as? UIButton }) {
             button.applyCameraActionButtonShadow(scale: layoutScale, outline: appearance.iconOutline)
         }
@@ -700,8 +683,6 @@ extension CameraActionsView {
         }
         addSubview(buttonStackView)
         addSubview(lensButtonStackView)
-        addSubview(rightPanel)
-        addSubview(leftPanel)
         // Each housing runs off its screen edge and ends at this view's bottom, where the host's
         // bottom chrome begins, so it reads as that chrome rising behind the buttons.
         housingOverhangConstraints = [
