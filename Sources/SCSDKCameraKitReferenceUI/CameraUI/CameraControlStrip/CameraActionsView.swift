@@ -507,7 +507,12 @@ public class CameraActionsView: UIView {
             let anchor = group.convert(group.bounds, to: self)
             let size = panel.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
             let x = right ? anchor.minX - size.width - 6 : anchor.maxX + 6
-            let y = max(bounds.minY, min(anchor.midY - size.height / 2, bounds.maxY - size.height))
+            // Keep numbered buttons above the capture controls when docked at the bottom,
+            // or below the side stacks when the toolbar is docked at the top.
+            let stackEdge = toolbarAtTop
+                ? max(buttonStackView.frame.maxY, lensButtonStackView.frame.maxY) + 6
+                : min(buttonStackView.frame.minY, lensButtonStackView.frame.minY) - size.height - 6
+            let y = max(bounds.minY, min(stackEdge, bounds.maxY - size.height))
             panel.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
         }
         for button in buttonStackView.arrangedSubviews.compactMap({ $0 as? UIButton }) {
