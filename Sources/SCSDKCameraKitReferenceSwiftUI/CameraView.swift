@@ -53,6 +53,7 @@ public struct CameraView: View {
     private let hostBottomInset: CGFloat
     private let hostTopInset: CGFloat
     private let toolbarAtTop: Bool
+    private let visibleLensButtonCount: Int
     private let captureButtonsInToolbar: Bool
     private let contentTopInset: CGFloat
     private let showsSnapAttribution: Bool
@@ -77,6 +78,7 @@ public struct CameraView: View {
         hostBottomInset: CGFloat = 0,
         hostTopInset: CGFloat = 0,
         toolbarAtTop: Bool = false,
+        visibleLensButtonCount: Int = 20,
         captureButtonsInToolbar: Bool = false,
         contentTopInset: CGFloat = 0,
         showsSnapAttribution: Bool = true,
@@ -100,6 +102,7 @@ public struct CameraView: View {
         self.hostBottomInset = hostBottomInset
         self.hostTopInset = hostTopInset
         self.toolbarAtTop = toolbarAtTop
+        self.visibleLensButtonCount = visibleLensButtonCount
         self.captureButtonsInToolbar = captureButtonsInToolbar
         self.contentTopInset = contentTopInset
         self.showsSnapAttribution = showsSnapAttribution
@@ -137,6 +140,7 @@ public struct CameraView: View {
                         hostBottomInset: hostBottomInset,
                         hostTopInset: hostTopInset,
                         toolbarAtTop: toolbarAtTop,
+                        visibleLensButtonCount: visibleLensButtonCount,
                         captureButtonsInToolbar: captureButtonsInToolbar,
                         showsCaptureControls: captureChromeVisible,
                         onVideoRecorded: onVideoRecorded,
@@ -527,6 +531,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     let hostBottomInset: CGFloat
     let hostTopInset: CGFloat
     let toolbarAtTop: Bool
+    let visibleLensButtonCount: Int
     let captureButtonsInToolbar: Bool
     let showsCaptureControls: Bool
     let onVideoRecorded: ((URL) -> Void)?
@@ -550,6 +555,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
         }
         view.apply(metrics: metrics, hostBottomInset: hostBottomInset, hostTopInset: hostTopInset, toolbarAtTop: toolbarAtTop)
         updateCaptureControls(in: view, coordinator: context.coordinator)
+        view.cameraActionsView.visibleLensButtonCount = visibleLensButtonCount
         view.cameraActionsView.appearance = sideControlsAppearance
         view.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
@@ -564,6 +570,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: InclusiveCameraControlsView, context: Context) {
         uiView.apply(metrics: metrics, hostBottomInset: hostBottomInset, hostTopInset: hostTopInset, toolbarAtTop: toolbarAtTop)
         updateCaptureControls(in: uiView, coordinator: context.coordinator)
+        uiView.cameraActionsView.visibleLensButtonCount = visibleLensButtonCount
         uiView.cameraActionsView.appearance = sideControlsAppearance
         uiView.updateAdjustmentAvailability(
             tone: state.toneMapAvailable || cameraController.isToneMapAdjustmentAvailable,
@@ -599,11 +606,19 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
             }
             let stack = isPhoto ? view.cameraActionsView.buttonStackView : view.cameraActionsView.lensButtonStackView
             // Keep the numbered lens group first, including with docked capture buttons.
-            let isAtCorrectEnd = toolbarAtTop ? stack.arrangedSubviews.dropFirst().first === host.view : stack.arrangedSubviews.last === host.view
+            let topIndex = isPhoto ? 0 : 1
+            let isAtCorrectEnd = toolbarAtTop ? stack.arrangedSubviews.dropFirst(topIndex).first === host.view : stack.arrangedSubviews.last === host.view
             if !isAtCorrectEnd {
                 stack.removeArrangedSubview(host.view)
                 host.view.removeFromSuperview()
-                stack.insertArrangedSubview(host.view, at: toolbarAtTop ? 1 : stack.arrangedSubviews.count)
+                stack.insertArrangedSubview(host.view, at: toolbarAtTop ? topIndex : stack.arrangedSubviews.count)
+            }
+            if !isPhoto {
+                if coordinator.recordWidth == nil {
+                    coordinator.recordWidth = host.view.widthAnchor.constraint(equalToConstant: 40 * metrics.scale)
+                    coordinator.recordWidth?.isActive = true
+                }
+                coordinator.recordWidth?.constant = 40 * metrics.scale
             }
             coordinator.captureHeights[isPhoto]?.constant = 56 * metrics.scale
             host.view.isHidden = !captureButtonsInToolbar || !showsCaptureControls
@@ -612,6 +627,7 @@ private struct CameraInclusiveControlsRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, FlashControlViewDelegate, AdjustmentControlViewDelegate {
         var captureHosts: [Bool: UIHostingController<LensFooter>] = [:]
+        var recordWidth: NSLayoutConstraint?
         var captureHeights: [Bool: NSLayoutConstraint] = [:]
         let state: CameraViewState
         let cameraController: CameraController

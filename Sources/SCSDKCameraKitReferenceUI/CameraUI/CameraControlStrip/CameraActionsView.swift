@@ -233,26 +233,56 @@ public class CameraActionsView: UIView {
     private lazy var extraSlots = (9...20).map {
         Self.lensSlotActionView(number: $0, identifier: "LensSlot\($0)ToggleButton")
     }
-    private lazy var rightGroup = makeGroup(1...10)
-    private lazy var leftGroup = makeGroup(11...20)
-    private func makeGroup(_ range: ClosedRange<Int>) -> CameraConfigurableActionView {
+    private let lensRows = UIStackView()
+    private lazy var rightGroup = makeLensGroup()
+
+    public var visibleLensButtonCount = 20 {
+        didSet {
+            if oldValue != visibleLensButtonCount { updateLensRows() }
+        }
+    }
+
+    private var slotCount: Int { min(max(visibleLensButtonCount, 0), lensButtonActionViews.count) }
+
+    private func updateLensRows() {
+        let count = slotCount
+        for row in lensRows.arrangedSubviews { row.removeFromSuperview() }
+        let slots = lensButtonActionViews
+        for first in stride(from: 0, to: count, by: 2).reversed() {
+            let row = UIStackView(arrangedSubviews: Array(slots[first..<min(first + 2, count)]))
+            lensRows.addArrangedSubview(row)
+        }
+        let label = count > 1 ? "1–\(count)" : "1"
+        rightGroup.toggleButton.setTitle(label, for: .normal)
+        rightGroup.toggleButton.accessibilityLabel = "Custom lens buttons " + label
+        rightGroup.isHidden = count == 0 || viewsToRestore != nil
+        if count == 0 {
+            rightGroup.toggleButton.isSelected = false
+            rightGroup.collapse()
+        }
+        updateGroupWidth()
+    }
+
+    private func updateGroupWidth() {
+        let expanded = rightGroup.toggleButton.isSelected
+        rightGroup.toggleButton.accessibilityValue = expanded ? "Expanded" : "Collapsed"
+        stackWidthConstraints.last?.constant = 40 * layoutScale * (expanded && slotCount > 1 ? 2 : 1)
+    }
+
+    private func makeLensGroup() -> CameraConfigurableActionView {
         let view = CameraConfigurableActionView()
-        let label = "\(range.lowerBound)–\(range.upperBound)"
         let button = view.toggleButton
-        button.setTitle(label, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 11, weight: .bold)
         button.titleLabel?.adjustsFontSizeToFitWidth = true
-        button.accessibilityLabel = "Lens buttons " + label
-        button.accessibilityIdentifier = "lensSlots\(range.lowerBound)To\(range.upperBound)"
-        button.accessibilityValue = "Collapsed"
-        view.enableAction = { [weak button] in button?.accessibilityValue = "Expanded" }
-        view.disableAction = { [weak button] in button?.accessibilityValue = "Collapsed" }
+        button.accessibilityIdentifier = "customLensButtons"
+        view.enableAction = { [weak self] in self?.updateGroupWidth() }
+        view.disableAction = { [weak self] in self?.updateGroupWidth() }
 
-        let slots = lensButtonActionViews
-        let column = UIStackView(arrangedSubviews: range.reversed().map { slots[$0 - 1] })
+        let column = lensRows
         column.axis = .vertical
+        column.alignment = .leading
         column.translatesAutoresizingMaskIntoConstraints = false
-        // Show the entire column when it fits. If other controls need the space,
+        // Show the entire grid when it fits. If other controls need the space,
         // only the numbered buttons scroll, so the group toggle stays reachable.
         let scroll = LensSlotScrollView()
         scroll.contentInsetAdjustmentBehavior = .never
@@ -267,7 +297,6 @@ public class CameraActionsView: UIView {
             column.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             column.topAnchor.constraint(equalTo: content.topAnchor),
             column.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            column.widthAnchor.constraint(equalTo: viewport.widthAnchor),
             fullHeight,
         ])
         view.setExpansionAboveToggle(scroll)
@@ -308,7 +337,7 @@ public class CameraActionsView: UIView {
     /// Camera settings stack (flip, flash, tone, portrait, HD), floating at the bottom leading edge.
     public lazy var buttonStackView: UIStackView = {
         let stackView = UIStackView(arrangedSubviews: [
-            leftGroup, flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
+            flipCameraButton, flashActionView, toneMapActionView, portraitActionView, highDefinitionActionView,
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
@@ -328,6 +357,7 @@ public class CameraActionsView: UIView {
         ])
         stackView.axis = .vertical
         stackView.spacing = 4
+        stackView.alignment = .trailing
         stackView.setCustomSpacing(6, after: retouchActionView)
         stackView.setCustomSpacing(6, after: noseAdjustmentsActionView)
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -382,12 +412,10 @@ public class CameraActionsView: UIView {
     private func applyIconTint() {
         let actionViews = [
             flashActionView, toneMapActionView, portraitActionView, retouchActionView,
-            noseAdjustmentsActionView, lensAudioActionView, rightGroup, leftGroup,
+            noseAdjustmentsActionView, lensAudioActionView, rightGroup,
         ] + lensButtonActionViews
-        for group in [rightGroup, leftGroup] {
-            group.toggleButton.setTitleColor(appearance.iconTint, for: .normal)
-            group.toggleButton.setTitleColor(appearance.selectedIconTint, for: .selected)
-        }
+        rightGroup.toggleButton.setTitleColor(appearance.iconTint, for: .normal)
+        rightGroup.toggleButton.setTitleColor(appearance.selectedIconTint, for: .selected)
         for button in [flipCameraButton] + actionViews.flatMap({ [$0.toggleButton, $0.configurationButton] }) {
             button.tintColor = appearance.iconTint
             for (state, color) in [(UIControl.State.normal, appearance.iconTint), (.selected, appearance.selectedIconTint)] {
@@ -457,11 +485,9 @@ public class CameraActionsView: UIView {
     /// Hide all camera actions except camera flip while recording.
     public func collapse() {
         guard viewsToRestore == nil else { return }
-        for group in [rightGroup, leftGroup] {
-            group.toggleButton.isSelected = false
-            group.collapse()
-            group.disableAction?()
-        }
+        rightGroup.toggleButton.isSelected = false
+        rightGroup.collapse()
+        updateGroupWidth()
         viewsToRestore = []
         let collapsible = buttonStackView.arrangedSubviews + lensButtonStackView.arrangedSubviews
         for subview in collapsible where subview !== flipCameraButton && !subview.isHidden {
@@ -480,6 +506,7 @@ public class CameraActionsView: UIView {
             }
         }
         viewsToRestore = nil
+        rightGroup.isHidden = slotCount == 0
     }
 
     // MARK: Init
@@ -553,7 +580,8 @@ public class CameraActionsView: UIView {
             ? metrics.sideControlsEdgeInset : -metrics.sideControlsEdgeInset }
         stackBottomConstraints.forEach { $0.constant = -metrics.sideControlsBottomGap }
         stackTopConstraints.forEach { $0.constant = metrics.sideControlsBottomGap }
-        stackWidthConstraints.forEach { $0.constant = 40 * scale }
+        stackWidthConstraints.first?.constant = 40 * scale
+        updateGroupWidth()
         housingOverhangConstraints.forEach { $0.constant = ($0.constant < 0 ? -32 : 32) * scale }
         buttonStackHousingView.layer.cornerRadius = 8 * scale
         lensButtonStackHousingView.layer.cornerRadius = 8 * scale
@@ -566,7 +594,7 @@ public class CameraActionsView: UIView {
             portraitActionView,
             retouchActionView,
             noseAdjustmentsActionView,
-            leftGroup, rightGroup, lensAudioActionView, highDefinitionActionView,
+            rightGroup, lensAudioActionView, highDefinitionActionView,
         ] + lensButtonActionViews {
             actionView.apply(scale: scale)
         }
@@ -736,18 +764,21 @@ extension CameraActionsView {
         NSLayoutConstraint.activate(stackEdgeConstraints + stackWidthConstraints + bottomDockConstraints)
         let flipCameraHeightConstraint = flipCameraButton.heightAnchor.constraint(equalToConstant: 40)
         self.flipCameraHeightConstraint = flipCameraHeightConstraint
-        NSLayoutConstraint.activate([flipCameraHeightConstraint])
+        NSLayoutConstraint.activate([flipCameraHeightConstraint, rightGroup.widthAnchor.constraint(equalTo: lensButtonStackView.widthAnchor)])
+        updateLensRows()
     }
 }
 
 /// Keep the first slot next to its toggle when an expanded column needs to scroll.
 private final class LensSlotScrollView: UIScrollView {
     private var lastViewport = CGSize.zero
+    private var lastContent = CGSize.zero
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.size != lastViewport else { return }
+        guard bounds.size != lastViewport || contentSize != lastContent else { return }
         lastViewport = bounds.size
+        lastContent = contentSize
         if bounds.height > 0 {
             contentOffset.y = max(0, contentSize.height - bounds.height)
         }

@@ -84,7 +84,9 @@ public class CameraConfigurableActionView: UIView {
         customExpansion = content
         configurationButton.isHidden = true
         content.isHidden = !toggleButton.isSelected || !configurable
+        buttonStackView.alignment = .trailing
         buttonStackView.insertArrangedSubview(content, at: 0)
+        content.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
     }
 
     // MARK: View Configuration
